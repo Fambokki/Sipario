@@ -40,6 +40,20 @@ struct SavedProvider: Codable, Hashable, Identifiable {
     let logoPath: String?
 }
 
+// MARK: - Tipo di server personale
+
+enum ServerKind: String, CaseIterable, Identifiable, Codable {
+    case jellyfin, emby, plex
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .jellyfin: return "Jellyfin"
+        case .emby: return "Emby"
+        case .plex: return "Plex"
+        }
+    }
+}
+
 // MARK: - Impostazioni
 
 @MainActor
@@ -53,7 +67,10 @@ final class AppSettings: ObservableObject {
     @Published var jellyfinToken: String { didSet { defaults.set(jellyfinToken, forKey: "jfToken") } }
     @Published var jellyfinUserId: String { didSet { defaults.set(jellyfinUserId, forKey: "jfUserId") } }
     @Published var jellyfinUserName: String { didSet { defaults.set(jellyfinUserName, forKey: "jfUserName") } }
-    /// Bitrate massimo per lo streaming da Jellyfin (bit/s).
+    @Published var serverKind: ServerKind { didSet { defaults.set(serverKind.rawValue, forKey: "serverKind") } }
+    /// Nome del server Plex scelto (solo per la visualizzazione).
+    @Published var serverName: String { didSet { defaults.set(serverName, forKey: "serverName") } }
+    /// Bitrate massimo per lo streaming dal server (bit/s).
     @Published var maxBitrate: Int { didSet { defaults.set(maxBitrate, forKey: "jfBitrate") } }
 
     let region = "IT"
@@ -65,6 +82,8 @@ final class AppSettings: ObservableObject {
         jellyfinToken = defaults.string(forKey: "jfToken") ?? ""
         jellyfinUserId = defaults.string(forKey: "jfUserId") ?? ""
         jellyfinUserName = defaults.string(forKey: "jfUserName") ?? ""
+        serverKind = ServerKind(rawValue: defaults.string(forKey: "serverKind") ?? "") ?? .jellyfin
+        serverName = defaults.string(forKey: "serverName") ?? ""
         let bitrate = defaults.integer(forKey: "jfBitrate")
         maxBitrate = bitrate > 0 ? bitrate : 20_000_000
         if let data = defaults.data(forKey: "services"),
@@ -102,6 +121,7 @@ final class AppSettings: ObservableObject {
     }
 
     func logoutJellyfin() {
+        serverName = ""
         jellyfinToken = ""
         jellyfinUserId = ""
         jellyfinUserName = ""

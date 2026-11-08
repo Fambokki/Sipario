@@ -4,8 +4,10 @@ struct HomeView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var library: JellyfinLibrary
     @EnvironmentObject private var myList: MyList
+    @EnvironmentObject private var matcher: ClassicMatcher
 
     @State private var hero: [TMDBItem] = []
+    @State private var heroArt: [Int: HeroArt] = [:]
     @State private var rows: [HomeRow] = []
     @State private var classics: [ArchiveItem] = []
     @State private var loading = false
@@ -28,7 +30,7 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 if !hero.isEmpty {
-                    HeroCarousel(items: hero)
+                    HeroCarousel(items: hero, art: heroArt)
                 } else if loading {
                     RoundedRectangle(cornerRadius: 22).fill(Theme.card)
                         .frame(height: 430)
@@ -182,6 +184,7 @@ struct HomeView: View {
             rows = built
             if let trend = results[0] {
                 hero = Array(trend.filter { $0.backdropPath != nil }.prefix(7))
+                await loadHeroArt()
             }
             errorText = built.isEmpty ? firstError?.localizedDescription : nil
         } else {
@@ -190,13 +193,41 @@ struct HomeView: View {
             errorText = nil
         }
         classics = (try? await classicsTask) ?? classics
+        await matcher.resolve(classics + myList.recentArchive.map(\.item))
     }
 }
 
 // MARK: - Carosello in alto
 
+/// Logo ufficiale e sfondo senza scritte di un titolo in evidenza.
+struct HeroArt: Hashable {
+    let logo: URL?
+    let backdrop: URL?
+}
+
+extension HomeView {
+    fileprivate func loadHeroArt() async {
+        let items = hero
+        var out: [Int: HeroArt] = [:]
+        await withTaskGroup(of: (Int, HeroArt?).self) { group in
+            for item in items {
+                group.addTask {
+                    guard let img = try? await TMDB.images(item.kind, id: item.id) else { return (item.id, nil) }
+                    let backdrop = TMDB.image(img.cleanBackdropPath, size: "w1280")
+                    return (item.id, HeroArt(logo: img.logoURL, backdrop: backdrop))
+                }
+            }
+            for await (id, art) in group {
+                if let art { out[id] = art }
+            }
+        }
+        heroArt = out
+    }
+}
+
 struct HeroCarousel: View {
     let items: [TMDBItem]
+    var art: [Int: HeroArt] = [:]
     @State private var index = 0
     @EnvironmentObject private var library: JellyfinLibrary
     @EnvironmentObject private var playback: Playback
@@ -222,7 +253,7 @@ struct HeroCarousel: View {
         return ZStack(alignment: .bottomLeading) {
             NavigationLink(value: Route.tmdb(item.kind, item.id)) {
                 GeometryReader { geo in
-                    RemoteImage(url: item.backdropURL)
+                    RemoteImage(url: art[item.id]?.backdrop ?? item.backdropURL)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
                         .overlay {
@@ -249,10 +280,7 @@ struct HeroCarousel: View {
                         Text("· Nel tuo server").font(.caption.weight(.semibold)).foregroundStyle(Theme.gold)
                     }
                 }
-                Text(item.displayTitle)
-                    .font(.system(size: 30, weight: .black, design: .serif))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                TitleLogo(logo: art[item.id]?.logo, title: item.displayTitle, maxHeight: 96, fontSize: 30)
                 if let o = item.overview, !o.isEmpty {
                     Text(o).font(.footnote).foregroundStyle(.white.opacity(0.8)).lineLimit(2)
                 }

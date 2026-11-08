@@ -19,7 +19,7 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
     static let shared = Playback()
 
     enum Reporter {
-        case jellyfin(itemId: String, session: String)
+        case server(ServerPlayback)
         case archive(ArchiveItem)
         case none
     }
@@ -42,24 +42,32 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
     // MARK: Avvio
 
     func play(_ item: JFItem) {
-        let session = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-        guard let url = Jellyfin.streamURL(itemId: item.id, playSessionId: session) else {
-            errorMessage = AppError.notLoggedIn.localizedDescription
-            return
+        isPreparing = true
+        Task {
+            defer { isPreparing = false }
+            do {
+                try await start(item)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
-        let start = (item.progress ?? 0) < 0.95 ? item.resumeSeconds : 0
-        begin(url: url, title: item.name ?? item.displayName, subtitle: item.isEpisode ? item.seriesName : nil,
-              start: start, reporter: .jellyfin(itemId: item.id, session: session))
     }
 
-    /// Riproduce un elemento di Jellyfin sapendo solo l'id (carica prima i dati aggiornati).
+    private func start(_ item: JFItem) async throws {
+        let p = try await Jellyfin.playback(for: item)
+        let start = (item.progress ?? 0) < 0.95 ? item.resumeSeconds : 0
+        begin(url: p.url, title: item.name ?? item.displayName, subtitle: item.isEpisode ? item.seriesName : nil,
+              start: start, reporter: .server(p))
+    }
+
+    /// Riproduce un elemento del server sapendo solo l'id (carica prima i dati aggiornati).
     func play(jellyfinId: String) {
         isPreparing = true
         Task {
             defer { isPreparing = false }
             do {
                 let item = try await Jellyfin.item(jellyfinId)
-                play(item)
+                try await start(item)
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -124,8 +132,8 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
             player.play()
         }
 
-        if case .jellyfin(let id, let session) = reporter {
-            Task { await Jellyfin.reportStart(itemId: id, seconds: start, session: session) }
+        if case .server(let p) = reporter {
+            Task { await Jellyfin.reportStart(p, seconds: start, duration: 0) }
         }
     }
 
@@ -160,10 +168,11 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
             errorMessage = "Riproduzione non riuscita: \(error.localizedDescription)"
         }
         switch reporter {
-        case .jellyfin(let id, let session):
+        case .server(let p):
             let s = currentSeconds
+            let d = duration
             let paused = player.rate == 0
-            Task { await Jellyfin.reportProgress(itemId: id, seconds: s, session: session, paused: paused) }
+            Task { await Jellyfin.reportProgress(p, seconds: s, duration: d, paused: paused) }
         case .archive(let item):
             MyList.shared.setProgress(item, seconds: currentSeconds, duration: duration)
         case .none:
@@ -184,9 +193,10 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
         finished = true
         let seconds = currentSeconds
         switch reporter {
-        case .jellyfin(let id, let session):
+        case .server(let p):
+            let d = duration
             Task {
-                await Jellyfin.reportStopped(itemId: id, seconds: seconds, session: session)
+                await Jellyfin.reportStopped(p, seconds: seconds, duration: d)
                 await JellyfinLibrary.shared.refresh()
             }
         case .archive(let item):

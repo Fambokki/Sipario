@@ -67,13 +67,13 @@ struct LibraryView: View {
                             .foregroundStyle(Theme.gold)
                             .padding(.top, 60)
                         Text("La tua videoteca personale").font(.title2.bold())
-                        Text("Collega un server Jellyfin (gratuito e open source) installato su un PC o NAS di casa: i tuoi film e le tue serie compariranno qui e nella Home, con copertine, \"Continua a guardare\" e Picture in Picture.")
+                        Text("Collega il tuo server Jellyfin, Emby o Plex: i tuoi film e le tue serie compariranno qui e nella Home, con copertine, \"Continua a guardare\" e Picture in Picture.")
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 28)
-                        Button("Collega Jellyfin") { showSettings = true }
+                        Button("Collega il server") { showSettings = true }
                             .buttonStyle(.borderedProminent)
-                        Link("Come installare Jellyfin", destination: URL(string: "https://jellyfin.org/downloads/")!)
+                        Link("Non hai un server? Jellyfin è gratuito", destination: URL(string: "https://jellyfin.org/downloads/")!)
                             .font(.footnote)
                     }
                 }

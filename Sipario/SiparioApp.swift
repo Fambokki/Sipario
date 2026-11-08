@@ -6,6 +6,7 @@ struct SiparioApp: App {
     @StateObject private var library = JellyfinLibrary.shared
     @StateObject private var myList = MyList.shared
     @StateObject private var playback = Playback.shared
+    @StateObject private var matcher = ClassicMatcher.shared
 
     init() {
         URLCache.shared = URLCache(memoryCapacity: 80 * 1024 * 1024, diskCapacity: 600 * 1024 * 1024)
@@ -19,6 +20,7 @@ struct SiparioApp: App {
                 .environmentObject(library)
                 .environmentObject(myList)
                 .environmentObject(playback)
+                .environmentObject(matcher)
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark)
         }

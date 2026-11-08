@@ -20,6 +20,8 @@ struct TMDBItem: Codable, Identifiable, Hashable {
     let firstAirDate: String?
     let mediaType: String?
     let genreIds: [Int]?
+    var originalTitle: String? = nil
+    var originalName: String? = nil
     var kindOverride: MediaKind? = nil
 
     var kind: MediaKind {
@@ -38,6 +40,36 @@ struct TMDBItem: Codable, Identifiable, Hashable {
 struct TMDBPage<T: Decodable>: Decodable {
     let results: [T]
     let totalPages: Int?
+}
+
+struct TMDBImage: Codable, Hashable {
+    let filePath: String
+    let iso6391: String?
+    let voteAverage: Double?
+}
+
+struct TMDBImages: Codable, Hashable {
+    let logos: [TMDBImage]?
+    let posters: [TMDBImage]?
+    let backdrops: [TMDBImage]?
+
+    /// Preferisce l'italiano, poi l'inglese, poi qualsiasi lingua (le immagini senza lingua non hanno scritte).
+    private static func pick(_ list: [TMDBImage]?, allowTextless: Bool) -> TMDBImage? {
+        let all = (list ?? []).sorted { ($0.voteAverage ?? 0) > ($1.voteAverage ?? 0) }
+        for lang in ["it", "en"] {
+            if let hit = all.first(where: { $0.iso6391 == lang }) { return hit }
+        }
+        if let any = all.first(where: { $0.iso6391 != nil }) { return any }
+        return allowTextless ? all.first : nil
+    }
+
+    var logoURL: URL? { Self.pick(logos, allowTextless: true).flatMap { TMDB.logo($0.filePath) } }
+    /// Locandina ufficiale con il titolo stampato.
+    var posterPath: String? { Self.pick(posters, allowTextless: false)?.filePath }
+    /// Sfondo senza scritte, per metterci sopra il logo.
+    var cleanBackdropPath: String? {
+        (backdrops ?? []).filter { $0.iso6391 == nil }.max { ($0.voteAverage ?? 0) < ($1.voteAverage ?? 0) }?.filePath
+    }
 }
 
 struct TMDBGenre: Codable, Hashable, Identifiable {
@@ -141,19 +173,21 @@ struct TMDBDetail: Decodable {
     let credits: TMDBCredits?
     let recommendations: TMDBPage<TMDBItem>?
     let watchProviders: TMDBProvidersResponse?
+    let images: TMDBImages?
 
     enum CodingKeys: String, CodingKey {
         case id, title, name, overview, tagline, runtime, episodeRunTime, genres, voteAverage
         case releaseDate, firstAirDate, numberOfSeasons, seasons, posterPath, backdropPath
-        case videos, credits, recommendations
+        case videos, credits, recommendations, images
         case watchProviders = "watch/providers"
     }
 
     var displayTitle: String { title ?? name ?? "" }
     var year: String? { (releaseDate ?? firstAirDate)?.yearPrefix }
     var minutes: Int? { runtime ?? episodeRunTime?.first }
-    var posterURL: URL? { TMDB.image(posterPath, size: "w500") }
-    var backdropURL: URL? { TMDB.image(backdropPath, size: "w1280") }
+    var posterURL: URL? { TMDB.image(images?.posterPath ?? posterPath, size: "w500") }
+    var backdropURL: URL? { TMDB.image(images?.cleanBackdropPath ?? backdropPath, size: "w1280") }
+    var logoURL: URL? { images?.logoURL }
 
     /// Il trailer migliore: prima in italiano, poi qualsiasi trailer su YouTube.
     var trailer: TMDBVideo? {
@@ -176,6 +210,12 @@ enum TMDB {
         d.keyDecodingStrategy = .convertFromSnakeCase
         return d
     }()
+
+    /// I loghi SVG di TMDB sono disponibili anche in PNG cambiando l'estensione.
+    nonisolated static func logo(_ path: String) -> URL? {
+        let png = path.hasSuffix(".svg") ? String(path.dropLast(4)) + ".png" : path
+        return URL(string: "https://image.tmdb.org/t/p/w500\(png)")
+    }
 
     nonisolated static func image(_ path: String?, size: String) -> URL? {
         guard let path, !path.isEmpty else { return nil }
@@ -249,9 +289,21 @@ enum TMDB {
 
     static func detail(_ kind: MediaKind, id: Int) async throws -> TMDBDetail {
         try await get("/\(kind.rawValue)/\(id)", [
-            "append_to_response": "videos,credits,recommendations,watch/providers",
+            "append_to_response": "videos,credits,recommendations,watch/providers,images",
             "include_video_language": "it,en,null",
+            "include_image_language": "it,en,null",
         ])
+    }
+
+    static func images(_ kind: MediaKind, id: Int) async throws -> TMDBImages {
+        try await get("/\(kind.rawValue)/\(id)/images", ["include_image_language": "it,en,null"])
+    }
+
+    /// Cerca un film per titolo (e anno) per dare una copertina ai classici.
+    static func findMovie(title: String, year: String?) async throws -> [TMDBItem] {
+        var p = ["query": title, "include_adult": "false"]
+        if let year, !year.isEmpty { p["year"] = year }
+        return try await list("/search/movie", p, kind: .movie)
     }
 
     static func season(tvId: Int, number: Int) async throws -> TMDBSeasonDetail {

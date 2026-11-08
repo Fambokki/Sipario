@@ -65,9 +65,12 @@ extension Card {
                     progress: item.progress, action: play ? .playJellyfin(item) : .open(.jellyfin(item.id)))
     }
 
+    @MainActor
     static func from(_ item: ArchiveItem, progress: Double? = nil, play: Bool = false) -> Card {
-        Card(id: "a\(item.identifier)", title: item.title, subtitle: item.year, imageURL: item.thumbURL,
-             progress: progress, badge: "Gratis", action: play ? .playArchive(item) : .open(.archive(item)))
+        let m = ClassicMatcher.shared.match(item)
+        return Card(id: "a\(item.identifier)", title: m?.title ?? ClassicMatcher.cleanTitle(item.title), subtitle: item.year,
+                    imageURL: m?.posterURL ?? item.thumbURL,
+                    progress: progress, badge: "Gratis", action: play ? .playArchive(item) : .open(.archive(item)))
     }
 }
 
@@ -314,5 +317,41 @@ struct FillImage: View {
             .frame(height: height)
             .overlay { RemoteImage(url: url) }
             .clipped()
+    }
+}
+
+/// Il logo ufficiale del titolo; finché non arriva (o se manca) mostra il titolo scritto.
+struct TitleLogo: View {
+    let logo: URL?
+    let title: String
+    var maxHeight: CGFloat = 90
+    var fontSize: CGFloat = 28
+
+    var body: some View {
+        if let logo {
+            AsyncImage(url: logo, transaction: Transaction(animation: .easeOut(duration: 0.3))) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 260, maxHeight: maxHeight, alignment: .leading)
+                        .shadow(color: .black.opacity(0.6), radius: 8)
+                        .accessibilityLabel(title)
+                case .failure:
+                    textTitle
+                default:
+                    Color.clear.frame(width: 200, height: maxHeight * 0.6)
+                }
+            }
+        } else {
+            textTitle
+        }
+    }
+
+    private var textTitle: some View {
+        Text(title)
+            .font(.system(size: fontSize, weight: .black, design: .serif))
+            .lineLimit(2)
+            .minimumScaleFactor(0.7)
     }
 }

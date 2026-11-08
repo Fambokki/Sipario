@@ -15,6 +15,14 @@ struct SettingsView: View {
     @State private var password = ""
     @State private var loggingIn = false
     @State private var loginError: String?
+    @State private var kind: ServerKind = .jellyfin
+    @State private var plexWaiting = false
+    @State private var plexAuthURL: URL?
+    @State private var plexServers: [PlexServer] = []
+    @State private var plexAccountToken = ""
+    @State private var plexUsername = ""
+    @State private var connectingServer: String?
+    @Environment(\.openURL) private var openURL
 
     enum KeyStatus: Equatable { case idle, checking, ok, bad }
 
@@ -43,6 +51,7 @@ struct SettingsView: View {
                 keyDraft = settings.tmdbKey
                 server = settings.jellyfinServer
                 username = settings.jellyfinUserName
+                kind = settings.serverKind
             }
             .task(id: settings.cleanTMDBKey) {
                 guard settings.hasTMDB else { providers = []; return }
@@ -132,12 +141,17 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Jellyfin
+    // MARK: Server personale
 
     private var jellyfinSection: some View {
         Section {
             if settings.hasJellyfin {
-                LabeledContent("Server", value: settings.jellyfinServer)
+                LabeledContent("Tipo", value: settings.serverKind.name)
+                if settings.serverKind == .plex && !settings.serverName.isEmpty {
+                    LabeledContent("Server", value: settings.serverName)
+                } else {
+                    LabeledContent("Server", value: settings.jellyfinServer)
+                }
                 LabeledContent("Utente", value: settings.jellyfinUserName)
                 Picker("Qualità streaming", selection: $settings.maxBitrate) {
                     ForEach(bitrates.indices, id: \.self) { i in Text(bitrates[i].0).tag(bitrates[i].1) }
@@ -147,31 +161,88 @@ struct SettingsView: View {
                 }
                 Button("Esci", role: .destructive) {
                     settings.logoutJellyfin()
+                    plexServers = []
                     Task { await library.refresh(force: true) }
                 }
             } else {
-                TextField("Indirizzo (es. http://192.168.1.10:8096)", text: $server)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField("Nome utente", text: $username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField("Password", text: $password)
+                Picker("Tipo di server", selection: $kind) {
+                    ForEach(ServerKind.allCases) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                if kind == .plex {
+                    plexLogin
+                } else {
+                    TextField("Indirizzo (es. http://192.168.1.10:8096)", text: $server)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("Nome utente", text: $username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Password", text: $password)
+                    Button {
+                        Task { await login() }
+                    } label: {
+                        if loggingIn { ProgressView() } else { Text("Accedi") }
+                    }
+                    .disabled(server.isEmpty || username.isEmpty || loggingIn)
+                }
                 if let loginError {
                     Text(loginError).font(.footnote).foregroundStyle(.red)
                 }
-                Button {
-                    Task { await login() }
-                } label: {
-                    if loggingIn { ProgressView() } else { Text("Accedi") }
-                }
-                .disabled(server.isEmpty || username.isEmpty || loggingIn)
             }
         } header: {
-            Text("Il tuo server Jellyfin")
+            Text("Il tuo server")
         } footer: {
-            Text("Jellyfin è gratuito e open source: installalo su un PC o NAS e aggiungi le cartelle con i tuoi film. Fuori casa serve un indirizzo raggiungibile da internet (es. Tailscale).")
+            Text(serverFooter)
+        }
+    }
+
+    private var serverFooter: String {
+        switch settings.hasJellyfin ? settings.serverKind : kind {
+        case .jellyfin:
+            return "Jellyfin è gratuito e open source: installalo su un PC o NAS e aggiungi le cartelle con i tuoi film. Fuori casa serve un indirizzo raggiungibile da internet (es. Tailscale)."
+        case .emby:
+            return "Usa lo stesso indirizzo, utente e password che usi nell'app di Emby (di solito la porta è 8096)."
+        case .plex:
+            return "Accedi con il tuo account Plex: si apre la pagina ufficiale di Plex, poi torni qui. Plex chiede l'abbonamento Plex Pass per guardare i propri file fuori dalla rete di casa."
+        }
+    }
+
+    @ViewBuilder
+    private var plexLogin: some View {
+        if plexServers.isEmpty {
+            Button {
+                Task { await startPlexLogin() }
+            } label: {
+                HStack {
+                    Text(plexWaiting ? "In attesa dell'accesso su plex.tv…" : "Accedi con Plex")
+                    Spacer()
+                    if plexWaiting { ProgressView() } else { Image(systemName: "arrow.up.right.square") }
+                }
+            }
+            .disabled(plexWaiting)
+            if plexWaiting, let u = plexAuthURL {
+                Link("Riapri la pagina di accesso", destination: u).font(.footnote)
+            }
+        } else {
+            ForEach(plexServers) { srv in
+                Button {
+                    Task { await connectPlex(srv) }
+                } label: {
+                    HStack {
+                        Image(systemName: "server.rack")
+                        VStack(alignment: .leading) {
+                            Text(srv.name).foregroundStyle(.primary)
+                            Text(srv.owned == false ? "Condiviso con te" : "Tuo").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if connectingServer == srv.id { ProgressView() }
+                    }
+                }
+                .disabled(connectingServer != nil)
+            }
         }
     }
 
@@ -180,8 +251,53 @@ struct SettingsView: View {
         loginError = nil
         defer { loggingIn = false }
         do {
-            try await Jellyfin.login(server: server, username: username, password: password)
+            try await Jellyfin.login(kind: kind, server: server, username: username, password: password)
             password = ""
+            await library.refresh(force: true)
+        } catch {
+            loginError = error.localizedDescription
+        }
+    }
+
+    private func startPlexLogin() async {
+        loginError = nil
+        do {
+            let pin = try await Plex.createPin()
+            guard let u = Plex.authURL(pin) else { return }
+            plexAuthURL = u
+            plexWaiting = true
+            openURL(u)
+            defer { plexWaiting = false }
+            // Controlla ogni 2 secondi per 5 minuti.
+            for _ in 0..<150 {
+                try await Task.sleep(for: .seconds(2))
+                if let token = try? await Plex.checkPin(pin) {
+                    plexAccountToken = token
+                    plexUsername = await Plex.username(accountToken: token)
+                    let list = try await Plex.servers(accountToken: token)
+                    if list.isEmpty {
+                        loginError = "Il tuo account Plex non ha server disponibili."
+                    } else if list.count == 1 {
+                        await connectPlex(list[0])
+                    } else {
+                        plexServers = list
+                    }
+                    return
+                }
+            }
+            loginError = "Tempo scaduto: riprova l'accesso."
+        } catch {
+            plexWaiting = false
+            loginError = error.localizedDescription
+        }
+    }
+
+    private func connectPlex(_ srv: PlexServer) async {
+        connectingServer = srv.id
+        defer { connectingServer = nil }
+        do {
+            try await Plex.connect(srv, accountToken: plexAccountToken, username: plexUsername)
+            plexServers = []
             await library.refresh(force: true)
         } catch {
             loginError = error.localizedDescription
@@ -193,7 +309,7 @@ struct SettingsView: View {
     private var aboutSection: some View {
         Section("Informazioni") {
             LabeledContent("Versione", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
-            Text("Sipario riproduce solo contenuti legali: il tuo server Jellyfin e i film di pubblico dominio dell'Internet Archive. Per i titoli dei servizi in abbonamento ti porta direttamente nella loro app.")
+            Text("Sipario riproduce solo contenuti legali: il tuo server (Jellyfin, Emby o Plex) e i film di pubblico dominio dell'Internet Archive. Per i titoli dei servizi in abbonamento ti porta direttamente nella loro app.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

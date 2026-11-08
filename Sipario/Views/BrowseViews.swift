@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ClassicsView: View {
     @EnvironmentObject private var myList: MyList
+    @EnvironmentObject private var matcher: ClassicMatcher
     @State private var rows: [String: [ArchiveItem]] = [:]
     @State private var loading = false
 
@@ -50,6 +51,10 @@ struct ClassicsView: View {
                 rows[id] = items
             }
         }
+        // Le locandine arrivano riga per riga, partendo dalle prime.
+        for cat in Archive.categories {
+            await matcher.resolve(rows[cat.id] ?? [])
+        }
     }
 }
 
@@ -57,42 +62,69 @@ struct ArchiveDetailView: View {
     let item: ArchiveItem
     @EnvironmentObject private var myList: MyList
     @EnvironmentObject private var playback: Playback
+    @EnvironmentObject private var matcher: ClassicMatcher
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         let progress = myList.archiveProgress[item.identifier]
+        let m = matcher.match(item)
+        let title = m?.title ?? ClassicMatcher.cleanTitle(item.title)
+        let text = (m?.overview).flatMap { $0.isEmpty ? nil : $0 } ?? item.cleanDescription
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                ZStack {
-                    FillImage(url: item.thumbURL, height: 300)
-                        .blur(radius: 30)
-                        .opacity(0.5)
-                        .clipped()
-                    RemoteImage(url: item.thumbURL, contentMode: .fit)
-                        .frame(height: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .shadow(radius: 20)
+                ZStack(alignment: .bottomLeading) {
+                    if let backdrop = m?.backdropURL {
+                        FillImage(url: backdrop, height: 320)
+                    } else {
+                        FillImage(url: m?.posterURL ?? item.thumbURL, height: 320)
+                            .blur(radius: 30)
+                            .opacity(0.5)
+                    }
+                    LinearGradient(colors: [.black.opacity(0.35), .clear, Theme.background], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 320)
+                    HStack(alignment: .bottom, spacing: 14) {
+                        RemoteImage(url: m?.posterURL ?? item.thumbURL, contentMode: m == nil ? .fit : .fill)
+                            .frame(width: 110, height: 165)
+                            .background(Theme.card)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .shadow(radius: 14)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text("GRATIS · PUBBLICO DOMINIO")
+                                    .font(.caption2.weight(.heavy))
+                                    .padding(.horizontal, 6).padding(.vertical, 3)
+                                    .background(Theme.gold, in: RoundedRectangle(cornerRadius: 4))
+                                    .foregroundStyle(.black)
+                                if let y = item.year { Text(y).font(.caption.weight(.semibold)) }
+                            }
+                            Text(title)
+                                .font(.system(size: 26, weight: .black, design: .serif))
+                                .lineLimit(3)
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
+                    .padding(.horizontal)
                 }
-                .frame(height: 300)
+                .frame(height: 320)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Text("GRATIS · PUBBLICO DOMINIO")
-                            .font(.caption2.weight(.heavy))
-                            .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(Theme.gold, in: RoundedRectangle(cornerRadius: 4))
-                            .foregroundStyle(.black)
-                        if let y = item.year { Text(y).font(.caption.weight(.semibold)) }
-                    }
-                    Text(item.title)
-                        .font(.system(size: 28, weight: .black, design: .serif))
                     PillButton(title: progress != nil ? "Riprendi" : "Guarda ora", systemImage: "play.fill", prominent: true) {
                         playback.play(item)
                     }
                     if let p = progress { ProgressBar(value: p.fraction) }
                     HStack(spacing: 10) {
-                        ListToggleButton(item: SavedItem(source: .archive, key: item.identifier, title: item.title,
-                                                         imageURL: item.thumbURL, archive: item))
-                        if let u = item.pageURL {
+                        ListToggleButton(item: SavedItem(source: .archive, key: item.identifier, title: title,
+                                                         imageURL: m?.posterURL ?? item.thumbURL, archive: item))
+                        if let m, settings.hasTMDB {
+                            NavigationLink(value: Route.tmdb(.movie, m.tmdbId)) {
+                                Label("Scheda", systemImage: "info.circle")
+                                    .font(.subheadline.weight(.bold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        } else if let u = item.pageURL {
                             Link(destination: u) {
                                 Label("archive.org", systemImage: "safari")
                                     .font(.subheadline.weight(.bold))
@@ -103,8 +135,8 @@ struct ArchiveDetailView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    if !item.cleanDescription.isEmpty {
-                        ExpandableText(text: item.cleanDescription, lines: 8)
+                    if !text.isEmpty {
+                        ExpandableText(text: text, lines: 8)
                     }
                 }
                 .padding(.horizontal)
@@ -112,7 +144,10 @@ struct ArchiveDetailView: View {
             .padding(.bottom, 30)
         }
         .background(Theme.background)
+        .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .task { await matcher.resolve([item]) }
     }
 }
 
@@ -121,6 +156,7 @@ struct ArchiveDetailView: View {
 struct SearchView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var library: JellyfinLibrary
+    @EnvironmentObject private var matcher: ClassicMatcher
 
     @State private var query = ""
     @State private var tmdb: [TMDBItem] = []
@@ -218,6 +254,7 @@ struct SearchView: View {
         tmdb = tr
         mine = jr
         classics = ar
+        await matcher.resolve(ar)
     }
 }
 

@@ -97,10 +97,7 @@ struct TMDBDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .shadow(radius: 12)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(d.displayTitle)
-                        .font(.system(size: 26, weight: .black, design: .serif))
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.7)
+                    TitleLogo(logo: d.logoURL, title: d.displayTitle, maxHeight: 80, fontSize: 26)
                     metaLine(d)
                 }
             }

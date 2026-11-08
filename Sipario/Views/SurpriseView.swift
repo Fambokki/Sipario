@@ -264,7 +264,7 @@ struct SurpriseView: View {
         guard let winner = pool.randomElement() else {
             errorText = settings.hasTMDB || settings.hasJellyfin
                 ? "Non ho trovato nulla con questi filtri: prova un altro umore."
-                : "Configura TMDB o Jellyfin nelle Impostazioni per usare questa funzione."
+                : "Configura TMDB o il tuo server nelle Impostazioni per usare questa funzione."
             return
         }
         // Effetto "slot machine": scorre qualche locandina rallentando.
