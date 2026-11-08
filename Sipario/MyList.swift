@@ -2,7 +2,7 @@ import Foundation
 
 /// Un titolo salvato in "La mia lista", da qualunque fonte provenga.
 struct SavedItem: Codable, Hashable, Identifiable {
-    enum Source: String, Codable { case tmdbMovie, tmdbTV, jellyfin, archive }
+    enum Source: String, Codable { case tmdbMovie, tmdbTV, jellyfin, archive, web }
 
     let source: Source
     let key: String
@@ -19,6 +19,7 @@ struct SavedItem: Codable, Hashable, Identifiable {
         case .tmdbTV: return Int(key).map { .tmdb(.tv, $0) }
         case .jellyfin: return .jellyfin(key)
         case .archive: return archive.map { .archive($0) }
+        case .web: return URL(string: key).map { .web($0, title) }
         }
     }
 

@@ -34,8 +34,6 @@ struct ClassicsView: View {
             .padding(.vertical)
         }
         .background(Theme.background)
-        .navigationTitle("Classici")
-        .navigationBarTitleDisplayMode(.inline)
         .task { if rows.isEmpty { await load() } }
         .refreshable { await load() }
     }

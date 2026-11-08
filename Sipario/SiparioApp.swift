@@ -7,6 +7,7 @@ struct SiparioApp: App {
     @StateObject private var myList = MyList.shared
     @StateObject private var playback = Playback.shared
     @StateObject private var matcher = ClassicMatcher.shared
+    @StateObject private var links = LinkStore.shared
 
     init() {
         URLCache.shared = URLCache(memoryCapacity: 80 * 1024 * 1024, diskCapacity: 600 * 1024 * 1024)
@@ -21,6 +22,7 @@ struct SiparioApp: App {
                 .environmentObject(myList)
                 .environmentObject(playback)
                 .environmentObject(matcher)
+                .environmentObject(links)
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark)
         }
@@ -33,6 +35,7 @@ enum Route: Hashable {
     case jellyfin(String)
     case archive(ArchiveItem)
     case discover(title: String, kind: MediaKind, params: [String: String])
+    case web(URL, String)
 }
 
 extension View {
@@ -43,6 +46,7 @@ extension View {
             case .jellyfin(let id): JellyfinDetailView(id: id)
             case .archive(let item): ArchiveDetailView(item: item)
             case .discover(let title, let kind, let params): DiscoverGridView(title: title, kind: kind, params: params)
+            case .web(let url, let title): WebBrowserView(url: url, title: title)
             }
         }
     }
@@ -63,8 +67,8 @@ struct RootView: View {
             NavigationStack { LibraryView().siparioDestinations() }
                 .tabItem { Label("Libreria", systemImage: "externaldrive.fill") }
                 .tag(2)
-            NavigationStack { ClassicsView().siparioDestinations() }
-                .tabItem { Label("Classici", systemImage: "film.stack") }
+            NavigationStack { GratisView().siparioDestinations() }
+                .tabItem { Label("Gratis", systemImage: "gift.fill") }
                 .tag(3)
             NavigationStack { MyListView().siparioDestinations() }
                 .tabItem { Label("La mia lista", systemImage: "bookmark.fill") }

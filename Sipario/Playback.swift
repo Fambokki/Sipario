@@ -21,6 +21,7 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
     enum Reporter {
         case server(ServerPlayback)
         case archive(ArchiveItem)
+        case link(UUID)
         case none
     }
 
@@ -86,6 +87,11 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    func play(_ link: LinkItem) {
+        let start = LinkStore.shared.progress[link.id]?.seconds ?? 0
+        begin(url: link.url, title: link.title, subtitle: link.group, start: start, reporter: .link(link.id))
     }
 
     private func begin(url: URL, title: String, subtitle: String?, start: Double, reporter: Reporter) {
@@ -175,6 +181,8 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
             Task { await Jellyfin.reportProgress(p, seconds: s, duration: d, paused: paused) }
         case .archive(let item):
             MyList.shared.setProgress(item, seconds: currentSeconds, duration: duration)
+        case .link(let id):
+            LinkStore.shared.setProgress(id, seconds: currentSeconds, duration: duration)
         case .none:
             break
         }
@@ -201,6 +209,8 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
             }
         case .archive(let item):
             MyList.shared.setProgress(item, seconds: seconds, duration: duration)
+        case .link(let id):
+            LinkStore.shared.setProgress(id, seconds: seconds, duration: duration)
         case .none:
             break
         }

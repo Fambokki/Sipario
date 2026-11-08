@@ -4,7 +4,10 @@ Il tuo cinema personale su iPhone, in stile Netflix, che mette insieme tre mondi
 
 - **Catalogo completo** (TMDB): film e serie del momento, schede con trailer, cast, stagioni ed episodi, e **dove guardarli in Italia** (Netflix, Prime Video, Disney+, NOW, Apple TV+…). Un tocco apre il titolo nell'app del servizio.
 - **Il tuo server Jellyfin, Emby o Plex**: i tuoi film e le tue serie con "Continua a guardare", prossimi episodi, Picture in Picture e AirPlay. Se un titolo del catalogo è anche sul tuo server compare il pulsante **Riproduci**.
-- **Classici gratuiti** (Internet Archive): film di pubblico dominio (noir, fantascienza, horror, western, cinema muto, cartoni d'epoca) da guardare subito dentro l'app.
+- **Scheda Gratis**, con tre sezioni:
+  - **Classici**: film di pubblico dominio dall'Internet Archive (noir, fantascienza, horror, western, cinema muto, cartoni d'epoca), con locandine e titoli italiani.
+  - **Siti gratuiti**: RaiPlay, Rai in diretta, Mediaset Infinity, La7, Pluto TV, Rakuten TV, Plex, Arte e Internet Archive aperti nel browser di Sipario (con blocco dei popup, pagine salvate nella lista e visitati di recente).
+  - **I miei link**: indirizzi video diretti (.mp4, .m3u8) e playlist M3U, riprodotti col player di Sipario con ripresa.
 
 In più: **"Stasera cosa guardo?"** (il dado in Home) pesca un titolo a caso in base all'umore, solo tra i tuoi abbonamenti, solo dal tuo server o da tutto. E c'è **La mia lista** per salvare titoli da qualunque fonte.
 
@@ -46,5 +49,7 @@ Con un Apple ID gratuito l'app scade dopo 7 giorni: basta reinstallarla (i dati 
 | `Sipario/Archive.swift` | Classici di pubblico dominio dall'Internet Archive |
 | `Sipario/Playback.swift` | Player a schermo intero, Picture in Picture, ripresa |
 | `Sipario/MyList.swift` | La mia lista e avanzamento dei classici |
+| `Sipario/Links.swift` | Siti gratuiti, i miei link, playlist M3U |
+| `Sipario/Views/WebBrowserView.swift` | Browser integrato |
 | `Sipario/Views/` | Home, schede, libreria, classici, ricerca, sorpresa, impostazioni |
 | `design/AppIcon.svg` | Sorgente dell'icona |

@@ -327,6 +327,25 @@ struct WhereToWatch: View {
         return out
     }
 
+    private func providerTile(_ p: TMDBProvider) -> some View {
+        VStack(spacing: 5) {
+            RemoteImage(url: p.logoURL)
+                .frame(width: 54, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    if mine.contains(p.providerId) {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Theme.gold, lineWidth: 2.5)
+                    }
+                }
+            Text(p.providerName)
+                .font(.system(size: 10))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(width: 64)
+        }
+    }
+
     private var includedInMine: TMDBProvider? {
         let pool = (country?.flatrate ?? []) + (country?.free ?? []) + (country?.ads ?? [])
         return pool.first { mine.contains($0.providerId) }
@@ -375,27 +394,16 @@ struct WhereToWatch: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(group.providers) { p in
-                                Button {
-                                    if let u = ProviderLinks.url(for: p, title: title, fallback: country?.link) { openURL(u) }
-                                } label: {
-                                    VStack(spacing: 5) {
-                                        RemoteImage(url: p.logoURL)
-                                            .frame(width: 54, height: 54)
-                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                            .overlay {
-                                                if mine.contains(p.providerId) {
-                                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                        .stroke(Theme.gold, lineWidth: 2.5)
-                                                }
-                                            }
-                                        Text(p.providerName)
-                                            .font(.system(size: 10))
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.center)
-                                            .frame(width: 64)
-                                    }
+                                if group.id == "Gratis", let u = ProviderLinks.url(for: p, title: title, fallback: country?.link) {
+                                    // I servizi gratuiti si aprono nel browser di Sipario.
+                                    NavigationLink(value: Route.web(u, p.providerName)) { providerTile(p) }
+                                        .buttonStyle(.plain)
+                                } else {
+                                    Button {
+                                        if let u = ProviderLinks.url(for: p, title: title, fallback: country?.link) { openURL(u) }
+                                    } label: { providerTile(p) }
+                                        .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                         .padding(.horizontal)
