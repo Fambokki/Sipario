@@ -177,7 +177,7 @@ enum TMDB {
         return d
     }()
 
-    static func image(_ path: String?, size: String) -> URL? {
+    nonisolated static func image(_ path: String?, size: String) -> URL? {
         guard let path, !path.isEmpty else { return nil }
         return URL(string: "https://image.tmdb.org/t/p/\(size)\(path)")
     }
