@@ -20,6 +20,7 @@ struct HomeView: View {
         let title: String
         let items: [TMDBItem]
         var seeAll: Route? = nil
+        var badge: String? = nil
     }
 
     private var reloadKey: String {
@@ -59,9 +60,11 @@ struct HomeView: View {
                 CardRow(title: "Prossimi episodi",
                         cards: library.nextUp.map { Card.from($0, play: true) }, wide: true)
 
+                freeSitesStrip
+
                 ForEach(rows) { row in
                     CardRow(title: row.title,
-                            cards: row.items.map { Card.from($0, library: library) },
+                            cards: row.items.map { Card.from($0, library: library, badge: row.badge) },
                             seeAll: row.seeAll)
                 }
 
@@ -92,6 +95,34 @@ struct HomeView: View {
         .refreshable { await load(force: true) }
     }
 
+    // MARK: Siti gratuiti
+
+    private var freeSitesStrip: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Siti gratuiti").font(.title3.bold()).padding(.horizontal)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(FreeSite.all) { site in
+                        NavigationLink(value: Route.web(site.url, site.name)) {
+                            HStack(spacing: 8) {
+                                Image(systemName: site.symbol).font(.subheadline)
+                                Text(site.name).font(.subheadline.weight(.semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 11)
+                            .background(LinearGradient(colors: [site.color, site.color.opacity(0.6)],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
     // MARK: Continua a guardare (Jellyfin + classici)
 
     @ViewBuilder
@@ -110,13 +141,29 @@ struct HomeView: View {
         let title: String
         let fetch: () async throws -> [TMDBItem]
         var seeAll: Route? = nil
+        var badge: String? = nil
     }
 
-    private func specs() -> [RowSpec] {
+    private func specs(free: [TMDBProvider]) -> [RowSpec] {
         var out: [RowSpec] = []
         out.append(RowSpec(id: "trend", title: "Di tendenza oggi") {
             try await TMDB.list("/trending/all/day")
         })
+        // Film e serie da guardare gratis e legalmente sui siti dei servizi gratuiti.
+        let freeParams = ["with_watch_monetization_types": "free|ads"]
+        if free.count > 1 {
+            let ids = free.map(\.providerId)
+            out.append(RowSpec(id: "free", title: "Da guardare gratis", fetch: {
+                try await TMDB.onServices(ids, extra: freeParams.merging(["vote_count.gte": "30"]) { a, _ in a })
+            }, badge: "Gratis"))
+        }
+        for p in free {
+            out.append(RowSpec(id: "free\(p.providerId)", title: "Gratis su \(p.providerName)", fetch: {
+                try await TMDB.onServices([p.providerId], extra: freeParams)
+            }, seeAll: .discover(title: "Gratis su \(p.providerName)", kind: .movie,
+                                 params: ["with_watch_providers": String(p.providerId), "with_watch_monetization_types": "free|ads"]),
+               badge: "Gratis"))
+        }
         if settings.services.count > 1 {
             let ids = settings.services.map(\.id)
             out.append(RowSpec(id: "mine", title: "Nei tuoi abbonamenti") {
@@ -159,7 +206,7 @@ struct HomeView: View {
         await library.refresh(force: force)
 
         if settings.hasTMDB {
-            let list = specs()
+            let list = specs(free: await TMDB.freeProviders())
             var results: [Int: [TMDBItem]] = [:]
             var firstError: Error?
             await withTaskGroup(of: RowResult.self) { group in
@@ -179,7 +226,7 @@ struct HomeView: View {
             var built: [HomeRow] = []
             for (i, spec) in list.enumerated() {
                 guard let items = results[i], !items.isEmpty else { continue }
-                built.append(HomeRow(id: spec.id, title: spec.title, items: items, seeAll: spec.seeAll))
+                built.append(HomeRow(id: spec.id, title: spec.title, items: items, seeAll: spec.seeAll, badge: spec.badge))
             }
             rows = built
             if let trend = results[0] {

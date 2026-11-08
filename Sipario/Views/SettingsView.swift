@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
@@ -22,6 +23,7 @@ struct SettingsView: View {
     @State private var plexAccountToken = ""
     @State private var plexUsername = ""
     @State private var connectingServer: String?
+    @State private var showLogoutSites = false
     @Environment(\.openURL) private var openURL
 
     enum KeyStatus: Equatable { case idle, checking, ok, bad }
@@ -40,8 +42,10 @@ struct SettingsView: View {
                 tmdbSection
                 if settings.hasTMDB { servicesSection }
                 jellyfinSection
+                siteAccountsSection
                 aboutSection
             }
+            .siparioDestinations()
             .navigationTitle("Impostazioni")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -301,6 +305,38 @@ struct SettingsView: View {
             await library.refresh(force: true)
         } catch {
             loginError = error.localizedDescription
+        }
+    }
+
+    // MARK: Account dei siti gratuiti
+
+    private var siteAccountsSection: some View {
+        Section {
+            ForEach(FreeSite.withAccount) { site in
+                NavigationLink(value: Route.web(site.url, site.name)) {
+                    HStack(spacing: 12) {
+                        Image(systemName: site.symbol)
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(site.color, in: RoundedRectangle(cornerRadius: 7))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(site.name)
+                            Text(site.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                }
+            }
+            Button("Esci da tutti i siti", role: .destructive) { showLogoutSites = true }
+        } header: {
+            Text("Account dei siti gratuiti")
+        } footer: {
+            Text("Apri un sito e tocca \"Accedi\" sulla sua pagina: Sipario ricorda l'accesso, così i film e i programmi che richiedono l'account (gratuito) si aprono già collegati. La password resta al sito, Sipario non la vede.")
+        }
+        .confirmationDialog("Vuoi uscire da tutti i siti aperti in Sipario?", isPresented: $showLogoutSites, titleVisibility: .visible) {
+            Button("Esci da tutti", role: .destructive) {
+                WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                                                        modifiedSince: .distantPast) {}
+            }
         }
     }
 

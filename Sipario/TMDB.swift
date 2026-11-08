@@ -279,7 +279,7 @@ enum TMDB {
         let joined = ids.map(String.init).joined(separator: "|")
         var p = extra
         p["with_watch_providers"] = joined
-        p["with_watch_monetization_types"] = "flatrate|free|ads"
+        if p["with_watch_monetization_types"] == nil { p["with_watch_monetization_types"] = "flatrate|free|ads" }
         let params = p
         async let movies = discover(.movie, params)
         async let shows = discover(.tv, params)
@@ -317,6 +317,32 @@ enum TMDB {
     static func providers() async throws -> [TMDBProvider] {
         let r: TMDBProviderList = try await get("/watch/providers/movie", ["watch_region": AppSettings.shared.region])
         return r.results.sorted { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) }
+    }
+
+    private static var freeCache: [TMDBProvider]?
+
+    /// I servizi gratuiti e legali disponibili in Italia, nell'ordine in cui li mostro.
+    static let freeServiceKeys = ["raiplay", "pluto", "plex", "rakuten", "mediaset", "la7", "arte"]
+
+    static func freeProviders() async -> [TMDBProvider] {
+        if let freeCache { return freeCache }
+        async let m: TMDBProviderList? = try? await get("/watch/providers/movie", ["watch_region": AppSettings.shared.region])
+        async let t: TMDBProviderList? = try? await get("/watch/providers/tv", ["watch_region": AppSettings.shared.region])
+        let all = ((await m)?.results ?? []) + ((await t)?.results ?? [])
+        var out: [TMDBProvider] = []
+        for key in freeServiceKeys {
+            // Prima il nome "pulito" (es. "Pluto TV"), evitando i canali dentro altri servizi.
+            let candidates = all.filter { p in
+                let n = p.providerName.lowercased().replacingOccurrences(of: " ", with: "")
+                return n.contains(key) && !n.contains("amazon") && !n.contains("channel")
+            }
+            if let best = candidates.min(by: { $0.providerName.count < $1.providerName.count }),
+               !out.contains(where: { $0.providerId == best.providerId }) {
+                out.append(best)
+            }
+        }
+        if !out.isEmpty { freeCache = out }
+        return out
     }
 
     static func genres(_ kind: MediaKind) async throws -> [TMDBGenre] {

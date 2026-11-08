@@ -45,10 +45,10 @@ struct Card: Identifiable, Hashable {
 
 extension Card {
     @MainActor
-    static func from(_ item: TMDBItem, library: JellyfinLibrary) -> Card {
+    static func from(_ item: TMDBItem, library: JellyfinLibrary, badge: String? = nil) -> Card {
         Card(id: "t\(item.kind.rawValue)\(item.id)", title: item.displayTitle, subtitle: item.year,
              imageURL: item.posterURL,
-             badge: library.match(item.kind, item.id) != nil ? "In libreria" : nil,
+             badge: library.match(item.kind, item.id) != nil ? "In libreria" : badge,
              action: .open(.tmdb(item.kind, item.id)))
     }
 

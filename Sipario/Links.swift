@@ -10,22 +10,26 @@ struct FreeSite: Identifiable, Hashable {
     let url: URL
     let symbol: String
     let color: Color
+    /// Il sito ha un account (gratuito) con cui si sbloccano più contenuti.
+    var account: Bool = false
+
+    static var withAccount: [FreeSite] { all.filter(\.account) }
 
     static let all: [FreeSite] = [
         .init(id: "raiplay", name: "RaiPlay", subtitle: "Film, fiction, serie e programmi Rai",
-              url: URL(string: "https://www.raiplay.it")!, symbol: "play.tv.fill", color: Color(red: 0.05, green: 0.35, blue: 0.75)),
+              url: URL(string: "https://www.raiplay.it")!, symbol: "play.tv.fill", color: Color(red: 0.05, green: 0.35, blue: 0.75), account: true),
         .init(id: "raidirette", name: "Rai in diretta", subtitle: "Rai 1, Rai 2, Rai 3 e gli altri canali",
               url: URL(string: "https://www.raiplay.it/dirette")!, symbol: "dot.radiowaves.left.and.right", color: Color(red: 0.10, green: 0.45, blue: 0.85)),
         .init(id: "mediaset", name: "Mediaset Infinity", subtitle: "Programmi e dirette Mediaset (parte gratuita)",
-              url: URL(string: "https://mediasetinfinity.mediaset.it")!, symbol: "sparkles.tv.fill", color: Color(red: 0.12, green: 0.20, blue: 0.55)),
+              url: URL(string: "https://mediasetinfinity.mediaset.it")!, symbol: "sparkles.tv.fill", color: Color(red: 0.12, green: 0.20, blue: 0.55), account: true),
         .init(id: "la7", name: "La7", subtitle: "Diretta e programmi on demand",
-              url: URL(string: "https://www.la7.it/dirette-tv")!, symbol: "7.square.fill", color: Color(red: 0.80, green: 0.15, blue: 0.20)),
+              url: URL(string: "https://www.la7.it/dirette-tv")!, symbol: "7.square.fill", color: Color(red: 0.80, green: 0.15, blue: 0.20), account: true),
         .init(id: "pluto", name: "Pluto TV", subtitle: "Canali e film gratis con pubblicità",
               url: URL(string: "https://pluto.tv/it/live-tv")!, symbol: "globe.europe.africa.fill", color: Color(red: 0.55, green: 0.25, blue: 0.75)),
         .init(id: "rakuten", name: "Rakuten TV", subtitle: "Sezione film gratuiti",
-              url: URL(string: "https://www.rakuten.tv/it")!, symbol: "film.fill", color: Color(red: 0.75, green: 0.10, blue: 0.30)),
+              url: URL(string: "https://www.rakuten.tv/it")!, symbol: "film.fill", color: Color(red: 0.75, green: 0.10, blue: 0.30), account: true),
         .init(id: "plex", name: "Plex (gratis)", subtitle: "Film e canali gratuiti di Plex",
-              url: URL(string: "https://watch.plex.tv")!, symbol: "chevron.right.2", color: Color(red: 0.85, green: 0.55, blue: 0.05)),
+              url: URL(string: "https://watch.plex.tv")!, symbol: "chevron.right.2", color: Color(red: 0.85, green: 0.55, blue: 0.05), account: true),
         .init(id: "arte", name: "Arte", subtitle: "Documentari, film e serie europee in italiano",
               url: URL(string: "https://www.arte.tv/it/")!, symbol: "paintpalette.fill", color: Color(red: 0.85, green: 0.35, blue: 0.10)),
         .init(id: "archive", name: "Internet Archive", subtitle: "Migliaia di film di pubblico dominio",

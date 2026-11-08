@@ -346,6 +346,10 @@ struct WhereToWatch: View {
         }
     }
 
+    private var firstFree: TMDBProvider? {
+        ((country?.free ?? []) + (country?.ads ?? [])).first
+    }
+
     private var includedInMine: TMDBProvider? {
         let pool = (country?.flatrate ?? []) + (country?.free ?? []) + (country?.ads ?? [])
         return pool.first { mine.contains($0.providerId) }
@@ -372,6 +376,29 @@ struct WhereToWatch: View {
                     }
                     .padding(12)
                     .background(LinearGradient(colors: [Theme.gold, Color(red: 1, green: 0.88, blue: 0.6)],
+                                               startPoint: .leading, endPoint: .trailing),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+            }
+
+            if includedInMine == nil, let p = firstFree,
+               let u = ProviderLinks.url(for: p, title: title, fallback: country?.link) {
+                NavigationLink(value: Route.web(u, p.providerName)) {
+                    HStack(spacing: 12) {
+                        RemoteImage(url: p.logoURL)
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Gratis e legale").font(.caption).foregroundStyle(.white.opacity(0.75))
+                            Text("Guarda gratis su \(p.providerName)").font(.headline).foregroundStyle(.white)
+                        }
+                        Spacer()
+                        Image(systemName: "play.fill").foregroundStyle(.white)
+                    }
+                    .padding(12)
+                    .background(LinearGradient(colors: [Theme.accent, Color(red: 0.6, green: 0.08, blue: 0.2)],
                                                startPoint: .leading, endPoint: .trailing),
                                 in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
