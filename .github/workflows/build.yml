@@ -1,0 +1,62 @@
+name: Compila IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installa XcodeGen
+        run: brew install xcodegen
+
+      - name: Genera il progetto Xcode
+        run: xcodegen generate
+
+      - name: Compila (senza firma)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Sipario.xcodeproj \
+            -scheme Sipario \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1 || { grep -E "error:" build.log | sort -u; exit 1; }
+          grep -E "BUILD SUCCEEDED" build.log
+          test -f build/Build/Products/Release-iphoneos/Sipario.app/Sipario
+
+      - name: Crea il file .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Sipario.app Payload/
+          zip -qry Sipario.ipa Payload
+
+      - name: Carica l'IPA tra gli artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sipario-ipa
+          path: Sipario.ipa
+
+      - name: Pubblica come release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Sipario build ${{ github.run_number }}
+          files: Sipario.ipa
+
+      - name: Log completo in caso di errore
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
