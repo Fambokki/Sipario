@@ -286,10 +286,14 @@ enum Importer {
             let c: JCatalog
             do { c = try dec.decode(JCatalog.self, from: data) }
             catch { throw AppError.message("Il catalogo JSON non è valido: controlla il formato nelle Impostazioni → Formati supportati.") }
-            list = (c.items ?? [])
-                + ((c.movies ?? []) + (c.films ?? [])).map { $0.with(type: "movie") }
-                + ((c.series ?? []) + (c.shows ?? [])).map { $0.with(type: "series") }
-                + ((c.live ?? []) + (c.channels ?? [])).map { $0.with(type: "live") }
+            var all: [JItem] = c.items ?? []
+            let movies: [JItem] = (c.movies ?? []) + (c.films ?? [])
+            let series: [JItem] = (c.series ?? []) + (c.shows ?? [])
+            let live: [JItem] = (c.live ?? []) + (c.channels ?? [])
+            all.append(contentsOf: movies.map { (j: JItem) -> JItem in j.with(type: "movie") })
+            all.append(contentsOf: series.map { (j: JItem) -> JItem in j.with(type: "series") })
+            all.append(contentsOf: live.map { (j: JItem) -> JItem in j.with(type: "live") })
+            list = all
         }
 
         func resolve(_ s: String?) -> URL? {

@@ -103,7 +103,6 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
             try? AVAudioSession.sharedInstance().setActive(true)
             topViewController()?.present(vc, animated: true) { player.play() }
         }
-        updateNextAction()
     }
 
     private func observe(_ playerItem: AVPlayerItem, startAt: Double) {
@@ -146,17 +145,6 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
     private var nextEpisode: Episode? {
         guard let item = currentItem, let ep = currentEpisode else { return nil }
         return store.nextEpisode(after: ep, in: item)
-    }
-
-    private func updateNextAction() {
-        guard let vc = controller else { return }
-        if nextEpisode != nil {
-            vc.contextualActions = [UIAction(title: "Episodio successivo", image: UIImage(systemName: "forward.end.fill")) { [weak self] _ in
-                MainActor.assumeIsolated { self?.playNext() }
-            }]
-        } else {
-            vc.contextualActions = []
-        }
     }
 
     private func playNext() {
