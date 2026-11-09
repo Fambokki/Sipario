@@ -1,28 +1,28 @@
 import SwiftUI
+import UIKit
 
 @main
 struct SiparioApp: App {
     @StateObject private var settings = AppSettings.shared
-    @StateObject private var library = JellyfinLibrary.shared
-    @StateObject private var myList = MyList.shared
+    @StateObject private var store = LibraryStore.shared
     @StateObject private var playback = Playback.shared
-    @StateObject private var matcher = ClassicMatcher.shared
-    @StateObject private var links = LinkStore.shared
 
     init() {
-        URLCache.shared = URLCache(memoryCapacity: 80 * 1024 * 1024, diskCapacity: 600 * 1024 * 1024)
+        URLCache.shared = URLCache(memoryCapacity: 100 * 1024 * 1024, diskCapacity: 800 * 1024 * 1024)
         Playback.configureAudio()
+        let tab = UITabBarAppearance()
+        tab.configureWithDefaultBackground()
+        tab.backgroundColor = UIColor(white: 0.04, alpha: 0.85)
+        UITabBar.appearance().standardAppearance = tab
+        UITabBar.appearance().scrollEdgeAppearance = tab
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(settings)
-                .environmentObject(library)
-                .environmentObject(myList)
+                .environmentObject(store)
                 .environmentObject(playback)
-                .environmentObject(matcher)
-                .environmentObject(links)
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark)
         }
@@ -31,66 +31,55 @@ struct SiparioApp: App {
 
 /// Le pagine raggiungibili dalla navigazione.
 enum Route: Hashable {
-    case tmdb(MediaKind, Int)
-    case jellyfin(String)
-    case archive(ArchiveItem)
-    case discover(title: String, kind: MediaKind, params: [String: String])
-    case web(URL, String)
+    case item(String)
+    case collection(String, CollectionFilter)
 }
 
 extension View {
     func siparioDestinations() -> some View {
         navigationDestination(for: Route.self) { route in
             switch route {
-            case .tmdb(let kind, let id): TMDBDetailView(kind: kind, id: id)
-            case .jellyfin(let id): JellyfinDetailView(id: id)
-            case .archive(let item): ArchiveDetailView(item: item)
-            case .discover(let title, let kind, let params): DiscoverGridView(title: title, kind: kind, params: params)
-            case .web(let url, let title): WebBrowserView(url: url, title: title)
+            case .item(let id): DetailView(id: id)
+            case .collection(let title, let filter): CollectionView(title: title, filter: filter)
             }
         }
     }
 }
 
 struct RootView: View {
+    @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var playback: Playback
-    @State private var tab = 0
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView {
             NavigationStack { HomeView().siparioDestinations() }
-                .tabItem { Label("Home", systemImage: "play.tv.fill") }
-                .tag(0)
+                .tabItem { Label("Home", systemImage: "house.fill") }
+            NavigationStack { BrowseView(kind: .movie).siparioDestinations() }
+                .tabItem { Label("Film", systemImage: "film.fill") }
+            NavigationStack { BrowseView(kind: .series).siparioDestinations() }
+                .tabItem { Label("Serie TV", systemImage: "tv.fill") }
             NavigationStack { SearchView().siparioDestinations() }
                 .tabItem { Label("Cerca", systemImage: "magnifyingglass") }
-                .tag(1)
-            NavigationStack { LibraryView().siparioDestinations() }
-                .tabItem { Label("Libreria", systemImage: "externaldrive.fill") }
-                .tag(2)
-            NavigationStack { GratisView().siparioDestinations() }
-                .tabItem { Label("Gratis", systemImage: "gift.fill") }
-                .tag(3)
             NavigationStack { MyListView().siparioDestinations() }
-                .tabItem { Label("La mia lista", systemImage: "bookmark.fill") }
-                .tag(4)
+                .tabItem { Label("La mia lista", systemImage: "plus.rectangle.on.rectangle") }
         }
-        .overlay {
-            if playback.isPreparing {
-                ZStack {
-                    Color.black.opacity(0.45).ignoresSafeArea()
-                    ProgressView("Preparo il video…")
-                        .padding(24)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .task { await store.startup() }
+        .confirmationDialog(
+            playback.failure?.title ?? "",
+            isPresented: Binding(get: { playback.failure != nil }, set: { if !$0 { playback.failure = nil } }),
+            titleVisibility: .visible,
+            presenting: playback.failure
+        ) { f in
+            ForEach(ExternalPlayer.allCases) { p in
+                Button("Apri in \(p.name)") {
+                    if let u = p.link(for: f.url) { openURL(u) }
                 }
             }
-        }
-        .alert("Qualcosa non va", isPresented: Binding(
-            get: { playback.errorMessage != nil },
-            set: { if !$0 { playback.errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(playback.errorMessage ?? "")
+            Button("Copia il link") { UIPasteboard.general.url = f.url }
+            Button("Annulla", role: .cancel) {}
+        } message: { f in
+            Text(f.message)
         }
     }
 }

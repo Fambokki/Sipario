@@ -1,55 +1,59 @@
 # Sipario
 
-Il tuo cinema personale su iPhone, in stile Netflix, che mette insieme tre mondi:
+Il tuo "Netflix" personale per iPhone: incolli il link di una libreria di film e serie e Sipario la trasforma in un catalogo con copertine, generi, stagioni, episodi, "Continua a guardare" e "La mia lista".
 
-- **Catalogo completo** (TMDB): film e serie del momento, schede con trailer, cast, stagioni ed episodi, e **dove guardarli in Italia** (Netflix, Prime Video, Disney+, NOW, Apple TV+…). Un tocco apre il titolo nell'app del servizio.
-- **Il tuo server Jellyfin, Emby o Plex**: i tuoi film e le tue serie con "Continua a guardare", prossimi episodi, Picture in Picture e AirPlay. Se un titolo del catalogo è anche sul tuo server compare il pulsante **Riproduci**.
-- **Scheda Gratis**, con tre sezioni:
-  - **Classici**: film di pubblico dominio dall'Internet Archive (noir, fantascienza, horror, western, cinema muto, cartoni d'epoca), con locandine e titoli italiani.
-  - **Siti gratuiti**: RaiPlay, Rai in diretta, Mediaset Infinity, La7, Pluto TV, Rakuten TV, Plex, Arte e Internet Archive aperti nel browser di Sipario (con blocco dei popup, pagine salvate nella lista e visitati di recente).
-  - **I miei link**: indirizzi video diretti (.mp4, .m3u8) e playlist M3U, riprodotti col player di Sipario con ripresa.
+> Sipario non contiene né fornisce contenuti: mostra e riproduce solo le librerie che aggiungi tu. Usa librerie di video che possiedi o che hai il diritto di guardare.
 
-In più: **"Stasera cosa guardo?"** (il dado in Home) pesca un titolo a caso in base all'umore, solo tra i tuoi abbonamenti, solo dal tuo server o da tutto. E c'è **La mia lista** per salvare titoli da qualunque fonte.
+## Cosa puoi importare
 
-> Uso personale, non va sull'App Store. Riproduce solo contenuti legali: per i servizi a pagamento ti porta nella loro app.
+| Sorgente | Esempio |
+|---|---|
+| **Playlist M3U / M3U8** | Usa nome, copertina (`tvg-logo`) e categoria (`group-title`). I nomi con `S01E02` o `1x02` diventano episodi raggruppati per serie e stagione. |
+| **Catalogo JSON** | Film e serie con stagioni, trame, generi e immagini (formato sotto). |
+| **Cartella web** | Il link a una cartella che elenca i file (es. il server web di un NAS): Sipario esplora fino a 5 livelli di sottocartelle, riconosce `Serie/`, `Stagione 1/`, `Season 2/` e usa `poster.jpg` / `folder.jpg` come copertina. |
+| **Singolo video** | Link diretto a `.mp4`, `.mov`, `.m4v` o a un flusso HLS `.m3u8`. |
 
-## Primo avvio
+Si possono aggiungere più librerie: compaiono tutte insieme nella Home e si aggiornano da sole ogni 6 ore.
 
-1. **Chiave TMDB (gratis)** — registrati su [themoviedb.org](https://www.themoviedb.org/signup), poi *Impostazioni → API* e crea una chiave per uso personale. In Sipario: ingranaggio → incolla la chiave (va bene sia la "Chiave API" sia il "Token di lettura") → *Salva e verifica*.
-2. **I miei abbonamenti** — sempre nelle Impostazioni, spunta i servizi che hai: compariranno righe dedicate in Home e il badge "Incluso nel tuo abbonamento" nelle schede.
-3. **Server personale (facoltativo)** — nelle Impostazioni scegli il tipo:
-   - **Jellyfin / Emby**: indirizzo (es. `http://192.168.1.10:8096`), utente e password. Fuori casa serve un indirizzo raggiungibile da internet, ad esempio con Tailscale.
-   - **Plex**: tocca *Accedi con Plex*, conferma sulla pagina ufficiale di Plex e torna in Sipario; se hai più server scegli quale usare. Fuori casa Plex richiede il Plex Pass.
+### Formato JSON
 
-I classici gratuiti funzionano subito, senza configurare nulla.
+```json
+{
+  "name": "La mia videoteca",
+  "movies": [
+    { "title": "Inception", "year": 2010, "poster": "https://…/poster.jpg",
+      "genres": ["Azione"], "url": "https://…/inception.mp4" }
+  ],
+  "series": [
+    { "title": "Dark", "year": 2017,
+      "seasons": [ { "season": 1, "episodes": [
+        { "episode": 1, "title": "Segreti", "url": "https://…/dark-s01e01.mp4" } ] } ] }
+  ]
+}
+```
 
-## Come si compila (senza Mac)
+Campi facoltativi: `year`, `poster`, `backdrop`, `overview`, `genres`, `tmdb` (id della scheda), `still` per gli episodi. Va bene anche un semplice elenco `[ … ]` di elementi con `"type": "movie" | "series" | "live"`.
 
-Ogni `push` sul ramo `main` avvia GitHub Actions, che compila l'app su un Mac virtuale.
-Il file `Sipario.ipa` si trova in **Releases** oppure in **Actions → ultimo run → Artifacts**.
-Se la compilazione fallisce, nello stesso run c'è l'artifact `build-log`.
+## Copertine e schede (consigliato)
 
-## Installazione su iPhone da Windows (Sideloadly)
+Con una chiave gratuita di [TMDB](https://www.themoviedb.org/settings/api) (Impostazioni → *Copertine e schede*) Sipario abbina i titoli alle schede ufficiali: locandine, sfondi, loghi, trame in italiano, generi, cast, trailer e titoli degli episodi. Se una scheda è sbagliata, nel menu `…` del titolo puoi toglierla.
 
-Come per Armonia:
+## Riproduzione
 
-1. Trascina `Sipario.ipa` in Sideloadly, inserisci il tuo Apple ID e premi **Start**.
-2. Sull'iPhone: Impostazioni → Generali → **VPN e gestione dispositivi** → autorizza il tuo Apple ID.
+- Riprende da dove eri rimasto, passa da solo all'episodio successivo, supporta Picture in Picture e AirPlay.
+- Il player di iOS legge MP4, MOV, M4V e HLS. Per MKV, AVI e altri formati Sipario propone di aprire il video in **VLC** o **Infuse**.
 
-Con un Apple ID gratuito l'app scade dopo 7 giorni: basta reinstallarla (i dati restano).
+## Compilazione e installazione (senza Mac)
+
+Ogni `push` su `main` avvia GitHub Actions, che compila l'app. `Sipario.ipa` è in **Releases**.
+Si installa con Sideloadly dal PC Windows; con un Apple ID gratuito va reinstallata ogni 7 giorni (i dati restano).
 
 ## Struttura
 
 | File | Cosa fa |
 |---|---|
-| `Sipario/TMDB.swift` | Catalogo, ricerca, disponibilità sui servizi, link alle app |
-| `Sipario/Jellyfin.swift` | Server personale: Jellyfin ed Emby, e smistamento verso Plex |
-| `Sipario/Plex.swift` | Accesso con PIN, libreria, streaming e avanzamento per Plex |
-| `Sipario/ClassicMatcher.swift` | Abbina i classici a TMDB per locandine e titoli italiani |
-| `Sipario/Archive.swift` | Classici di pubblico dominio dall'Internet Archive |
-| `Sipario/Playback.swift` | Player a schermo intero, Picture in Picture, ripresa |
-| `Sipario/MyList.swift` | La mia lista e avanzamento dei classici |
-| `Sipario/Links.swift` | Siti gratuiti, i miei link, playlist M3U |
-| `Sipario/Views/WebBrowserView.swift` | Browser integrato |
-| `Sipario/Views/` | Home, schede, libreria, classici, ricerca, sorpresa, impostazioni |
-| `design/AppIcon.svg` | Sorgente dell'icona |
+| `Sipario/Importer.swift` | Lettura di M3U, JSON, cartelle web; riconoscimento di film, serie, stagioni ed episodi dai nomi |
+| `Sipario/LibraryStore.swift` | Librerie, archivio su disco, aggiornamenti, avanzamento, la mia lista, abbinamento TMDB |
+| `Sipario/TMDB.swift` | Schede, immagini, loghi, cast, episodi |
+| `Sipario/Playback.swift` | Player, ripresa, episodio successivo, apertura in VLC/Infuse |
+| `Sipario/Views/` | Home, Film, Serie TV, Cerca, La mia lista, scheda, impostazioni |

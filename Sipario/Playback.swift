@@ -14,27 +14,46 @@ final class SiparioPlayerController: AVPlayerViewController {
     }
 }
 
+/// Lettori esterni, per i formati che il player di iOS non legge (es. MKV, AVI).
+enum ExternalPlayer: String, CaseIterable, Identifiable {
+    case vlc, infuse
+    var id: String { rawValue }
+    var name: String { self == .vlc ? "VLC" : "Infuse" }
+
+    func link(for url: URL) -> URL? {
+        let enc = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        switch self {
+        case .vlc: return URL(string: "vlc-x-callback://x-callback-url/stream?url=\(enc)")
+        case .infuse: return URL(string: "infuse://x-callback-url/play?url=\(enc)")
+        }
+    }
+}
+
 @MainActor
 final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate {
     static let shared = Playback()
 
-    enum Reporter {
-        case server(ServerPlayback)
-        case archive(ArchiveItem)
-        case link(UUID)
-        case none
+    struct Failure: Identifiable {
+        let id = UUID()
+        let url: URL
+        let title: String
+        let message: String
     }
 
-    @Published var errorMessage: String?
-    @Published private(set) var isPreparing = false
+    @Published var failure: Failure?
 
     private var player: AVPlayer?
     private var controller: SiparioPlayerController?
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
-    private var reporter: Reporter = .none
+    private var endObserver: NSObjectProtocol?
+    private var currentItem: MediaItem?
+    private var currentEpisode: Episode?
+    private var currentURL: URL?
     private var pipActive = false
-    private var finished = true
+    private var active = false
+
+    private var store: LibraryStore { LibraryStore.shared }
 
     static func configureAudio() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
@@ -42,118 +61,118 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
 
     // MARK: Avvio
 
-    func play(_ item: JFItem) {
-        isPreparing = true
-        Task {
-            defer { isPreparing = false }
-            do {
-                try await start(item)
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
+    func play(_ item: MediaItem, episode: Episode? = nil) {
+        var ep = episode
+        if item.kind == .series && ep == nil { ep = store.resumeEpisode(for: item) }
+        guard let url = ep?.url ?? item.url else { return }
+        start(item: item, episode: ep, url: url)
     }
 
-    private func start(_ item: JFItem) async throws {
-        let p = try await Jellyfin.playback(for: item)
-        let start = (item.progress ?? 0) < 0.95 ? item.resumeSeconds : 0
-        begin(url: p.url, title: item.name ?? item.displayName, subtitle: item.isEpisode ? item.seriesName : nil,
-              start: start, reporter: .server(p))
-    }
-
-    /// Riproduce un elemento del server sapendo solo l'id (carica prima i dati aggiornati).
-    func play(jellyfinId: String) {
-        isPreparing = true
-        Task {
-            defer { isPreparing = false }
-            do {
-                let item = try await Jellyfin.item(jellyfinId)
-                try await start(item)
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    func play(_ item: ArchiveItem) {
-        isPreparing = true
-        Task {
-            defer { isPreparing = false }
-            do {
-                let url = try await Archive.videoURL(item.identifier)
-                let start = MyList.shared.archiveProgress[item.identifier]?.seconds ?? 0
-                begin(url: url, title: item.title, subtitle: item.year, start: start, reporter: .archive(item))
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    func play(_ link: LinkItem) {
-        let start = LinkStore.shared.progress[link.id]?.seconds ?? 0
-        begin(url: link.url, title: link.title, subtitle: link.group, start: start, reporter: .link(link.id))
-    }
-
-    private func begin(url: URL, title: String, subtitle: String?, start: Double, reporter: Reporter) {
-        finish()
-        self.reporter = reporter
-        finished = false
+    private func start(item: MediaItem, episode: Episode?, url: URL) {
+        let pid = episode?.id ?? item.id
+        let startAt = item.kind == .live ? 0 : store.resumePosition(pid)
+        currentItem = item
+        currentEpisode = episode
+        currentURL = url
 
         let playerItem = AVPlayerItem(url: url)
-        playerItem.externalMetadata = metadata(title: title, subtitle: subtitle)
-        let player = AVPlayer(playerItem: playerItem)
-        player.allowsExternalPlayback = true
-        self.player = player
+        playerItem.externalMetadata = metadata(item: item, episode: episode)
+        observe(playerItem, startAt: startAt)
 
-        if start > 5 {
-            statusObservation = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
-                guard item.status == .readyToPlay else { return }
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.player?.seek(to: CMTime(seconds: start, preferredTimescale: 600),
+        if let player, active {
+            // Episodio successivo nello stesso player.
+            player.replaceCurrentItem(with: playerItem)
+            player.play()
+        } else {
+            let player = AVPlayer(playerItem: playerItem)
+            player.allowsExternalPlayback = true
+            self.player = player
+            let vc = SiparioPlayerController()
+            vc.player = player
+            vc.delegate = self
+            vc.allowsPictureInPicturePlayback = true
+            vc.canStartPictureInPictureAutomaticallyFromInline = true
+            vc.modalPresentationStyle = .fullScreen
+            vc.onDismiss = { [weak self] in self?.controllerDismissed() }
+            controller = vc
+            active = true
+            timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5, preferredTimescale: 1), queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.saveProgress() }
+            }
+            Playback.configureAudio()
+            try? AVAudioSession.sharedInstance().setActive(true)
+            topViewController()?.present(vc, animated: true) { player.play() }
+        }
+        updateNextAction()
+    }
+
+    private func observe(_ playerItem: AVPlayerItem, startAt: Double) {
+        statusObservation = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
+            let status = item.status
+            let message = item.error?.localizedDescription
+            Task { @MainActor in
+                guard let self else { return }
+                if status == .readyToPlay, startAt > 5 {
+                    self.player?.seek(to: CMTime(seconds: startAt, preferredTimescale: 600),
                                       toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 1, preferredTimescale: 600))
-                    self.statusObservation = nil
+                } else if status == .failed {
+                    self.handleFailure(message)
                 }
             }
         }
-
-        let vc = SiparioPlayerController()
-        vc.player = player
-        vc.delegate = self
-        vc.allowsPictureInPicturePlayback = true
-        vc.canStartPictureInPictureAutomaticallyFromInline = true
-        vc.modalPresentationStyle = .fullScreen
-        vc.onDismiss = { [weak self] in
-            self?.controllerDismissed()
-        }
-        controller = vc
-
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 10, preferredTimescale: 1), queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.reportProgress() }
-        }
-
-        Playback.configureAudio()
-        try? AVAudioSession.sharedInstance().setActive(true)
-        topViewController()?.present(vc, animated: true) {
-            player.play()
-        }
-
-        if case .server(let p) = reporter {
-            Task { await Jellyfin.reportStart(p, seconds: start, duration: 0) }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: playerItem, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.didFinishItem() }
         }
     }
 
-    private func metadata(title: String, subtitle: String?) -> [AVMetadataItem] {
-        func item(_ id: AVMetadataIdentifier, _ value: String) -> AVMetadataItem {
+    private func metadata(item: MediaItem, episode: Episode?) -> [AVMetadataItem] {
+        func meta(_ id: AVMetadataIdentifier, _ value: String) -> AVMetadataItem {
             let m = AVMutableMetadataItem()
             m.identifier = id
             m.value = value as NSString
             m.extendedLanguageTag = "und"
             return m.copy() as! AVMetadataItem
         }
-        var out = [item(.commonIdentifierTitle, title)]
-        if let subtitle, !subtitle.isEmpty { out.append(item(.iTunesMetadataTrackSubTitle, subtitle)) }
-        return out
+        if let episode {
+            let title = episode.title.map { "\(episode.code) · \($0)" } ?? episode.code
+            return [meta(.commonIdentifierTitle, title), meta(.iTunesMetadataTrackSubTitle, item.displayTitle)]
+        }
+        return [meta(.commonIdentifierTitle, item.displayTitle)]
+    }
+
+    // MARK: Episodio successivo
+
+    private var nextEpisode: Episode? {
+        guard let item = currentItem, let ep = currentEpisode else { return nil }
+        return store.nextEpisode(after: ep, in: item)
+    }
+
+    private func updateNextAction() {
+        guard let vc = controller else { return }
+        if nextEpisode != nil {
+            vc.contextualActions = [UIAction(title: "Episodio successivo", image: UIImage(systemName: "forward.end.fill")) { [weak self] _ in
+                MainActor.assumeIsolated { self?.playNext() }
+            }]
+        } else {
+            vc.contextualActions = []
+        }
+    }
+
+    private func playNext() {
+        guard let item = currentItem, let next = nextEpisode else { return }
+        saveProgress()
+        if let ep = currentEpisode { store.setWatched(ep.id, seriesId: item.id, true) }
+        start(item: item, episode: next, url: next.url)
+    }
+
+    private func didFinishItem() {
+        saveProgress(finished: true)
+        if AppSettings.shared.autoplayNext, nextEpisode != nil {
+            playNext()
+        } else if !pipActive {
+            controller?.dismiss(animated: true)
+        }
     }
 
     // MARK: Avanzamento
@@ -168,23 +187,29 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
         return d
     }
 
-    private func reportProgress() {
-        guard !finished, let player else { return }
-        if let error = player.currentItem?.error {
-            errorMessage = "Riproduzione non riuscita: \(error.localizedDescription)"
+    private func saveProgress(finished: Bool = false) {
+        guard active, let item = currentItem, item.kind != .live else { return }
+        let pid = currentEpisode?.id ?? item.id
+        let d = duration
+        store.record(pid, seriesId: item.kind == .series ? item.id : nil,
+                     seconds: finished ? d : currentSeconds, duration: d)
+    }
+
+    // MARK: Errori
+
+    private func handleFailure(_ message: String?) {
+        guard let url = currentURL else { return }
+        let title = currentItem?.displayTitle ?? "Video"
+        let text = "Il player di iOS non riesce ad aprire questo video (\(message ?? "formato non supportato")). Puoi aprirlo con un lettore come VLC o Infuse."
+        let present = { [weak self] in
+            self?.failure = Failure(url: url, title: title, message: text)
         }
-        switch reporter {
-        case .server(let p):
-            let s = currentSeconds
-            let d = duration
-            let paused = player.rate == 0
-            Task { await Jellyfin.reportProgress(p, seconds: s, duration: d, paused: paused) }
-        case .archive(let item):
-            MyList.shared.setProgress(item, seconds: currentSeconds, duration: duration)
-        case .link(let id):
-            LinkStore.shared.setProgress(id, seconds: currentSeconds, duration: duration)
-        case .none:
-            break
+        if let vc = controller, vc.presentingViewController != nil {
+            finish()
+            vc.dismiss(animated: true) { MainActor.assumeIsolated { present() } }
+        } else {
+            finish()
+            present()
         }
     }
 
@@ -197,30 +222,17 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
     }
 
     private func finish() {
-        guard !finished else { return }
-        finished = true
-        let seconds = currentSeconds
-        switch reporter {
-        case .server(let p):
-            let d = duration
-            Task {
-                await Jellyfin.reportStopped(p, seconds: seconds, duration: d)
-                await JellyfinLibrary.shared.refresh()
-            }
-        case .archive(let item):
-            MyList.shared.setProgress(item, seconds: seconds, duration: duration)
-        case .link(let id):
-            LinkStore.shared.setProgress(id, seconds: seconds, duration: duration)
-        case .none:
-            break
-        }
+        guard active else { return }
+        saveProgress()
+        active = false
         player?.pause()
         if let timeObserver { player?.removeTimeObserver(timeObserver) }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         timeObserver = nil
+        endObserver = nil
         statusObservation = nil
         player = nil
         controller = nil
-        reporter = .none
         pipActive = false
     }
 
@@ -233,16 +245,13 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
     nonisolated func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
         MainActor.assumeIsolated {
             self.pipActive = false
-            // PiP chiuso con la X: se il player non è più a schermo, la visione è finita.
-            if self.controller?.presentingViewController == nil {
-                self.finish()
-            }
+            if self.controller?.presentingViewController == nil { self.finish() }
         }
     }
 
     nonisolated func playerViewController(_ playerViewController: AVPlayerViewController,
                                           restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             guard let vc = self.controller, vc.presentingViewController == nil, let top = topViewController() else {
                 completionHandler(true)
                 return

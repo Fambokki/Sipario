@@ -6,8 +6,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.3.0"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "2.0.0"
+    CURRENT_PROJECT_VERSION: "5"
 targets:
   Sipario:
     type: application
@@ -39,7 +39,7 @@ targets:
         NSLocalNetworkUsageDescription: Sipario si collega al tuo server Jellyfin sulla rete di casa.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        LSApplicationQueriesSchemes: [nflx, youtube]
+        LSApplicationQueriesSchemes: [vlc-x-callback, infuse, youtube]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: it.personale.sipario

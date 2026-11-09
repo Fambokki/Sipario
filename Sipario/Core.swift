@@ -8,48 +8,27 @@ enum Theme {
     static let gold = Color(red: 0.96, green: 0.76, blue: 0.36)
     static let card = Color(white: 0.11)
     static let background = Color(red: 0.04, green: 0.04, blue: 0.05)
+
+    static let posterPalette: [Color] = [
+        Color(red: 0.45, green: 0.10, blue: 0.16), Color(red: 0.12, green: 0.22, blue: 0.45),
+        Color(red: 0.30, green: 0.14, blue: 0.42), Color(red: 0.08, green: 0.33, blue: 0.30),
+        Color(red: 0.45, green: 0.26, blue: 0.08), Color(red: 0.20, green: 0.22, blue: 0.27),
+    ]
 }
 
 // MARK: - Errori
 
 enum AppError: LocalizedError {
-    case missingKey
-    case badKey
-    case notLoggedIn
     case http(Int)
-    case noVideo
     case message(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingKey: return "Manca la chiave TMDB. Aggiungila nelle Impostazioni."
-        case .badKey: return "La chiave TMDB non è valida."
-        case .notLoggedIn: return "Non sei collegato a Jellyfin."
-        case .http(let code): return "Il server ha risposto con errore \(code)."
-        case .noVideo: return "Non ho trovato un file video riproducibile."
+        case .http(let code):
+            if code == 404 { return "Indirizzo non trovato (errore 404)." }
+            if code == 401 || code == 403 { return "Accesso negato dal server (errore \(code))." }
+            return "Il server ha risposto con errore \(code)."
         case .message(let m): return m
-        }
-    }
-}
-
-// MARK: - Servizio di streaming scelto dall'utente
-
-struct SavedProvider: Codable, Hashable, Identifiable {
-    let id: Int
-    let name: String
-    let logoPath: String?
-}
-
-// MARK: - Tipo di server personale
-
-enum ServerKind: String, CaseIterable, Identifiable, Codable {
-    case jellyfin, emby, plex
-    var id: String { rawValue }
-    var name: String {
-        switch self {
-        case .jellyfin: return "Jellyfin"
-        case .emby: return "Emby"
-        case .plex: return "Plex"
         }
     }
 }
@@ -61,92 +40,36 @@ final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     private let defaults = UserDefaults.standard
 
-    @Published var tmdbKey: String { didSet { defaults.set(tmdbKey, forKey: "tmdbKey") } }
-    @Published var services: [SavedProvider] { didSet { saveServices() } }
-    @Published var jellyfinServer: String { didSet { defaults.set(jellyfinServer, forKey: "jfServer") } }
-    @Published var jellyfinToken: String { didSet { defaults.set(jellyfinToken, forKey: "jfToken") } }
-    @Published var jellyfinUserId: String { didSet { defaults.set(jellyfinUserId, forKey: "jfUserId") } }
-    @Published var jellyfinUserName: String { didSet { defaults.set(jellyfinUserName, forKey: "jfUserName") } }
-    @Published var serverKind: ServerKind { didSet { defaults.set(serverKind.rawValue, forKey: "serverKind") } }
-    /// Nome del server Plex scelto (solo per la visualizzazione).
-    @Published var serverName: String { didSet { defaults.set(serverName, forKey: "serverName") } }
-    /// Bitrate massimo per lo streaming dal server (bit/s).
-    @Published var maxBitrate: Int { didSet { defaults.set(maxBitrate, forKey: "jfBitrate") } }
-
-    let region = "IT"
-    let deviceId: String
+    @Published var tmdbKey: String {
+        didSet { defaults.set(tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "tmdbKey") }
+    }
+    @Published var autoplayNext: Bool { didSet { defaults.set(autoplayNext, forKey: "autoplayNext") } }
 
     private init() {
         tmdbKey = defaults.string(forKey: "tmdbKey") ?? ""
-        jellyfinServer = defaults.string(forKey: "jfServer") ?? ""
-        jellyfinToken = defaults.string(forKey: "jfToken") ?? ""
-        jellyfinUserId = defaults.string(forKey: "jfUserId") ?? ""
-        jellyfinUserName = defaults.string(forKey: "jfUserName") ?? ""
-        serverKind = ServerKind(rawValue: defaults.string(forKey: "serverKind") ?? "") ?? .jellyfin
-        serverName = defaults.string(forKey: "serverName") ?? ""
-        let bitrate = defaults.integer(forKey: "jfBitrate")
-        maxBitrate = bitrate > 0 ? bitrate : 20_000_000
-        if let data = defaults.data(forKey: "services"),
-           let list = try? JSONDecoder().decode([SavedProvider].self, from: data) {
-            services = list
-        } else {
-            services = []
-        }
-        if let id = defaults.string(forKey: "deviceId") {
-            deviceId = id
-        } else {
-            let id = UUID().uuidString
-            defaults.set(id, forKey: "deviceId")
-            deviceId = id
-        }
+        autoplayNext = defaults.object(forKey: "autoplayNext") as? Bool ?? true
     }
 
-    private func saveServices() {
-        if let data = try? JSONEncoder().encode(services) {
-            defaults.set(data, forKey: "services")
-        }
-    }
-
-    var cleanTMDBKey: String { tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var hasTMDB: Bool { !cleanTMDBKey.isEmpty }
-    var hasJellyfin: Bool { !jellyfinToken.isEmpty && !jellyfinServer.isEmpty && !jellyfinUserId.isEmpty }
-    var serviceIds: Set<Int> { Set(services.map(\.id)) }
-
-    func toggleService(_ p: SavedProvider) {
-        if let i = services.firstIndex(where: { $0.id == p.id }) {
-            services.remove(at: i)
-        } else {
-            services.append(p)
-        }
-    }
-
-    func logoutJellyfin() {
-        serverName = ""
-        jellyfinToken = ""
-        jellyfinUserId = ""
-        jellyfinUserName = ""
-    }
+    var hasTMDB: Bool { !tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 }
 
 // MARK: - Utilità
 
-extension String {
-    /// Rimuove i tag HTML e comprime gli spazi.
-    var strippingHTML: String {
-        var s = replacingOccurrences(of: "<br ?/?>", with: "\n", options: .regularExpression)
-        s = s.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        s = s.replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-        s = s.replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
-        s = s.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+/// Identificativo breve e stabile (FNV-1a) ricavato da una stringa.
+func stableID(_ s: String) -> String {
+    var h: UInt64 = 0xcbf29ce484222325
+    for b in s.utf8 {
+        h ^= UInt64(b)
+        h = h &* 0x100000001b3
     }
+    return String(h, radix: 36)
+}
 
-    var yearPrefix: String? {
-        count >= 4 ? String(prefix(4)) : nil
-    }
+/// Chiave di confronto: minuscole, senza accenti, solo lettere e numeri.
+func normalizeKey(_ s: String) -> String {
+    s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+        .lowercased()
+        .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
 }
 
 func formatMinutes(_ minutes: Int) -> String {
@@ -154,6 +77,19 @@ func formatMinutes(_ minutes: Int) -> String {
     let h = minutes / 60, m = minutes % 60
     if h == 0 { return "\(m) min" }
     return m == 0 ? "\(h) h" : "\(h) h \(m) min"
+}
+
+func tmdbImage(_ path: String?, _ size: String) -> URL? {
+    guard let path, !path.isEmpty else { return nil }
+    return URL(string: "https://image.tmdb.org/t/p/\(size)\(path)")
+}
+
+extension String {
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+    var nonEmpty: String? { trimmed.isEmpty ? nil : trimmed }
+
+    /// Numero stabile per scegliere un colore a partire da un titolo.
+    var colorSeed: Int { unicodeScalars.reduce(0) { ($0 &+ Int($1.value)) % 9973 } }
 }
 
 /// Il view controller in cima, per presentare il player da qualsiasi punto.
@@ -168,18 +104,33 @@ func topViewController() -> UIViewController? {
     return top
 }
 
-/// Chiave di decodifica: trasforma "PascalCase" (Jellyfin) in "camelCase".
-struct AnyCodingKey: CodingKey {
-    var stringValue: String
-    var intValue: Int?
-    init(stringValue: String) { self.stringValue = stringValue }
-    init?(intValue: Int) { self.stringValue = String(intValue); self.intValue = intValue }
+// MARK: - Regex
+
+func regexMatches(_ pattern: String, in text: String) -> [NSTextCheckingResult] {
+    guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+    return re.matches(in: text, range: NSRange(text.startIndex..., in: text))
 }
 
-extension Dictionary where Key == String {
-    /// Ricerca della chiave senza distinzione tra maiuscole e minuscole.
-    func value(forInsensitive key: String) -> Value? {
-        let k = key.lowercased()
-        return first { $0.key.lowercased() == k }?.value
+struct RegexHit {
+    let range: Range<String.Index>
+    let groups: [String?]
+}
+
+func regexHit(_ m: NSTextCheckingResult, in text: String) -> RegexHit? {
+    guard let r = Range(m.range, in: text) else { return nil }
+    var groups: [String?] = []
+    if m.numberOfRanges > 1 {
+        for i in 1..<m.numberOfRanges {
+            groups.append(Range(m.range(at: i), in: text).map { String(text[$0]) })
+        }
     }
+    return RegexHit(range: r, groups: groups)
+}
+
+func firstHit(_ pattern: String, in text: String) -> RegexHit? {
+    regexMatches(pattern, in: text).first.flatMap { regexHit($0, in: text) }
+}
+
+func lastHit(_ pattern: String, in text: String) -> RegexHit? {
+    regexMatches(pattern, in: text).last.flatMap { regexHit($0, in: text) }
 }
