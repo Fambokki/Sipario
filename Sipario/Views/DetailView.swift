@@ -50,7 +50,7 @@ struct DetailView: View {
             }
             .padding(.horizontal)
 
-            if item.kind == .series {
+            if item.kind == .series && !item.episodes.isEmpty {
                 episodesSection(item)
             }
             if let cast = extra?.cast, !cast.isEmpty {
@@ -101,7 +101,7 @@ struct DetailView: View {
     private func metaLine(_ item: MediaItem) -> some View {
         var parts: [String] = []
         if let y = item.displayYear { parts.append(String(y)) }
-        if item.kind == .series {
+        if item.kind == .series && !item.episodes.isEmpty {
             let n = item.seasons.count
             parts.append(n == 1 ? "\(item.episodes.count) episodi" : "\(n) stagioni")
         } else if let r = extra?.runtime, r > 0, item.kind == .movie {
@@ -118,6 +118,9 @@ struct DetailView: View {
     }
 
     private func playButton(_ item: MediaItem) -> some View {
+        if item.lazyStream == StreamingServices.lazyKind {
+            return PillButton(title: "Guarda su " + (item.group ?? "il sito"), systemImage: "arrow.up.right.square.fill", prominent: true) { playback.play(item) }
+        }
         let title: String
         switch item.kind {
         case .live: title = "Guarda in diretta"

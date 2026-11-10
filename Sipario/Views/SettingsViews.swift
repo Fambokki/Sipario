@@ -413,6 +413,9 @@ struct FormatsHelpView: View {
                 Text("L'indirizzo del tuo server con una chiave API, ad esempio http://192.168.1.10:8096/?api_key=CHIAVE (la chiave si crea in Dashboard → Chiavi API). Sipario importa tutti i film e tutte le serie con stagioni, episodi, copertine e trame; i file MKV e AVI vengono convertiti dal server per il player di iOS. Aggiungi &user=Nome per scegliere un utente.")
             } header: { Text("Jellyfin o Emby") }
             Section {
+                Text("Il link di un servizio come raiplay.it, netflix.com, primevideo.com, disneyplus.com, it.chili.com, mediasetinfinity.it, nowtv.it o timvision.it. Sipario importa da TMDB i film e le serie più popolari disponibili su quel servizio in Italia, con locandine e trame; \"Guarda su…\" apre il titolo nell'app o sul sito del servizio. Serve la chiave TMDB.")
+            } header: { Text("Servizi di streaming") }
+            Section {
                 Text("Il link di una pagina che contiene un video in chiaro (MP4 o HLS). Sipario apre la pagina in un browser invisibile che blocca i circuiti pubblicitari, trova il flusso del video e importa solo quello, con titolo e copertina della pagina. Non funziona con i video protetti da DRM (RaiPlay, Netflix, Prime Video…) né con le pubblicità inserite dentro il flusso stesso.")
             } header: { Text("Pagina web") }
 

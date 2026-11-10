@@ -65,6 +65,11 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
         var ep = episode
         if item.kind == .series && ep == nil { ep = store.resumeEpisode(for: item) }
         guard let url = ep?.url ?? item.url else { return }
+        if item.lazyStream == StreamingServices.lazyKind {
+            // Il video è sul servizio: si apre la sua app (se installata) o il suo sito.
+            UIApplication.shared.open(url)
+            return
+        }
         if ep == nil, let kind = item.lazyStream {
             Task {
                 do {
