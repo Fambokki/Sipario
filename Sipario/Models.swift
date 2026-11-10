@@ -69,6 +69,8 @@ struct MediaItem: Codable, Hashable, Identifiable {
     var meta: Meta?
     var matchTried: Bool = false
     var tmdbHint: Int?
+    /// Se presente, `url` è la scheda del titolo e il flusso video si cerca al momento della visione.
+    var lazyStream: String?
     /// Pagina da cui proviene il flusso, inviata come Referer.
     var referer: URL?
 

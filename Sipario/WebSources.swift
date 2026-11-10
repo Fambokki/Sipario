@@ -23,6 +23,9 @@ enum WebSources {
 
     /// Titoli da un sito con un adattatore dedicato, oppure nil se l'indirizzo non è di uno di questi siti.
     static func adapterItems(for library: Library, url: URL) async throws -> [MediaItem]? {
+        if MediaServer.handles(url) {
+            return try await MediaServer.items(for: library, url: url)
+        }
         if InternetArchive.handles(url) {
             return try await InternetArchive.items(for: library, url: url)
         }
@@ -30,6 +33,30 @@ enum WebSources {
             return try await PeerTube.items(for: library, url: url)
         }
         return nil
+    }
+
+    // MARK: Flussi cercati al momento della visione
+
+    /// I cataloghi grandi si importano senza i link ai video: il flusso si cerca quando premi Play.
+    static func resolveStream(_ kind: String, page: URL) async throws -> URL {
+        switch kind {
+        case InternetArchive.lazyKind:
+            let parts = page.pathComponents.filter { $0 != "/" }
+            guard parts.count >= 2, let meta = URL(string: "https://archive.org/metadata/\(parts[1])"),
+                  let root = try await json(meta) as? [String: Any],
+                  let first = InternetArchive.videosOf(id: parts[1], root: root).first else {
+                throw AppError.message("Questo titolo di Internet Archive non ha più un video riproducibile.")
+            }
+            return first.url
+        case PeerTube.lazyKind:
+            guard let scheme = page.scheme, let host = page.host, let id = page.pathComponents.last,
+                  let v = await PeerTube.video(id, origin: "\(scheme)://\(host)" + (page.port.map { ":\($0)" } ?? "")) else {
+                throw AppError.message("Questo video PeerTube non è più disponibile.")
+            }
+            return v.url
+        default:
+            throw AppError.message("Non so come aprire questo titolo.")
+        }
     }
 
     // MARK: Pagine web qualsiasi
@@ -194,7 +221,7 @@ enum WebSources {
 
     /// Trasforma i video trovati in film, canali o — se più video sono puntate della stessa serie — una serie.
     static func make(_ videos: [FoundVideo], library: Library, seriesTitle: String?,
-                     seriesPoster: URL? = nil, seriesOverview: String? = nil) -> [MediaItem] {
+                     seriesPoster: URL? = nil, seriesOverview: String? = nil, lazy: String? = nil) -> [MediaItem] {
         let lib = library.id.uuidString
         let asSeries = library.hint == .series
             || (library.hint == .auto && seriesTitle != nil && videos.count > 1
@@ -224,6 +251,7 @@ enum WebSources {
             var item = MediaItem(id: id, libraryId: library.id, kind: kind, title: v.title, year: v.year,
                                  poster: v.poster, overview: v.overview, genres: v.genres, url: v.url)
             item.referer = v.referer
+            item.lazyStream = lazy
             return item
         }
     }
@@ -330,34 +358,37 @@ enum InternetArchive {
                                seriesPoster: poster(id), seriesOverview: WebSources.stripTags(string(meta["description"])))
     }
 
-    /// Ricerca (o collezione): ogni risultato diventa un film con il suo video principale.
-    private static func search(_ query: String, library: Library, name: String) async throws -> [MediaItem] {
-        var comps = URLComponents(string: "https://archive.org/advancedsearch.php")!
-        comps.queryItems = [
-            URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "fl[]", value: "identifier"),
-            URLQueryItem(name: "sort[]", value: "downloads desc"),
-            URLQueryItem(name: "rows", value: "120"),
-            URLQueryItem(name: "page", value: "1"),
-            URLQueryItem(name: "output", value: "json"),
-        ]
-        guard let root = try await WebSources.json(comps.url!) as? [String: Any],
-              let docs = (root["response"] as? [String: Any])?["docs"] as? [[String: Any]] else {
-            throw AppError.message("Internet Archive non ha risposto alla ricerca.")
-        }
-        let ids = docs.compactMap { $0["identifier"] as? String }
-        guard !ids.isEmpty else { throw AppError.message("La ricerca \"\(name)\" su Internet Archive non ha trovato video.") }
+    static let lazyKind = "archive"
 
-        let videos: [FoundVideo] = await WebSources.parallelMap(ids) { id in
-            guard let url = URL(string: "https://archive.org/metadata/\(id)"),
-                  let root = try? await WebSources.json(url) as? [String: Any] else { return nil }
-            guard var main = InternetArchive.videosOf(id: id, root: root).first else { return nil }
-            let meta = root["metadata"] as? [String: Any] ?? [:]
-            main.title = InternetArchive.string(meta["title"]) ?? main.title
-            return main
+    /// Ricerca o collezione: fino a 1000 titoli, importati subito con scheda e copertina; il video si cerca al Play.
+    private static func search(_ query: String, library: Library, name: String) async throws -> [MediaItem] {
+        var docs: [[String: Any]] = []
+        for page in 1...5 {
+            var comps = URLComponents(string: "https://archive.org/advancedsearch.php")!
+            comps.queryItems = [URLQueryItem(name: "q", value: query)]
+                + ["identifier", "title", "year", "date", "description", "subject"].map { URLQueryItem(name: "fl[]", value: $0) }
+                + [URLQueryItem(name: "sort[]", value: "downloads desc"), URLQueryItem(name: "rows", value: "200"),
+                   URLQueryItem(name: "page", value: "\(page)"), URLQueryItem(name: "output", value: "json")]
+            guard let root = try await WebSources.json(comps.url!) as? [String: Any],
+                  let response = root["response"] as? [String: Any],
+                  let batch = response["docs"] as? [[String: Any]] else {
+                if page == 1 { throw AppError.message("Internet Archive non ha risposto alla ricerca.") }
+                break
+            }
+            docs += batch
+            let total = response["numFound"] as? Int ?? 0
+            if batch.count < 200 || docs.count >= total { break }
         }
-        guard !videos.isEmpty else { throw AppError.message("I risultati su Internet Archive non hanno video riproducibili.") }
-        return WebSources.make(videos, library: library, seriesTitle: nil)
+        let videos: [FoundVideo] = docs.compactMap { d in
+            guard let id = d["identifier"] as? String, let page = URL(string: "https://archive.org/details/\(id)") else { return nil }
+            let subject = (d["subject"] as? [String]) ?? string(d["subject"]).map { $0.split(separator: ";").map { String($0).trimmed } } ?? []
+            return FoundVideo(title: string(d["title"]) ?? id, url: page, poster: poster(id),
+                              overview: WebSources.stripTags(string(d["description"])),
+                              year: (string(d["year"]) ?? string(d["date"])).flatMap { Int($0.prefix(4)) },
+                              genres: Array(subject.prefix(4)))
+        }
+        guard !videos.isEmpty else { throw AppError.message("La ricerca \"\(name)\" su Internet Archive non ha trovato video.") }
+        return WebSources.make(videos, library: library, seriesTitle: nil, lazy: lazyKind)
     }
 
     /// I video di un elemento, un file per opera (si preferisce l'MP4 di qualità migliore).
@@ -430,10 +461,17 @@ enum PeerTube {
         case channel(String)
         case account(String)
         case playlist(String)
+        case instance
     }
+
+    static let lazyKind = "peertube"
 
     private static func target(_ url: URL) -> Target? {
         let p = url.pathComponents.filter { $0 != "/" }
+        // La home dell'istanza o le sue pagine di esplorazione: tutto il catalogo dei video locali.
+        if p.isEmpty || (p.first == "videos" && ["browse", "local", "recently-added", "trending", "overview"].contains(p.count > 1 ? p[1] : "")) {
+            return .instance
+        }
         guard p.count >= 2 else { return nil }
         switch (p[0], p[1]) {
         case ("w", "p") where p.count >= 3: return .playlist(p[2])
@@ -464,9 +502,11 @@ enum PeerTube {
             guard let v = await video(id, origin: origin) else { throw AppError.message("Questo video PeerTube non è disponibile o non è pubblico.") }
             return WebSources.make([v], library: library, seriesTitle: nil)
         case .channel(let name):
-            return try await list(origin + "/api/v1/video-channels/\(name)/videos", origin: origin, library: library, title: name, playlist: false)
+            return try await catalog(origin + "/api/v1/video-channels/\(name)/videos?", origin: origin, library: library)
         case .account(let name):
-            return try await list(origin + "/api/v1/accounts/\(name)/videos", origin: origin, library: library, title: name, playlist: false)
+            return try await catalog(origin + "/api/v1/accounts/\(name)/videos?", origin: origin, library: library)
+        case .instance:
+            return try await catalog(origin + "/api/v1/videos?isLocal=true&", origin: origin, library: library)
         case .playlist(let id):
             var title: String?
             if let u = URL(string: origin + "/api/v1/video-playlists/\(id)"), let info = try? await WebSources.json(u) as? [String: Any] {
@@ -475,6 +515,35 @@ enum PeerTube {
             return try await list(origin + "/api/v1/video-playlists/\(id)/videos", origin: origin, library: library,
                                   title: title ?? "Playlist", playlist: true)
         }
+    }
+
+    /// Catalogo grande (istanza, canale, account): fino a 1000 video con scheda e copertina; il flusso si cerca al Play.
+    private static func catalog(_ endpoint: String, origin: String, library: Library) async throws -> [MediaItem] {
+        var videos: [FoundVideo] = []
+        var start = 0
+        while start < 1000 {
+            guard let u = URL(string: endpoint + "count=100&start=\(start)&sort=-publishedAt"),
+                  let page = try await WebSources.json(u) as? [String: Any],
+                  let data = page["data"] as? [[String: Any]] else { break }
+            for v in data {
+                guard let name = (v["name"] as? String)?.nonEmpty,
+                      let id = (v["shortUUID"] as? String) ?? (v["uuid"] as? String),
+                      let watch = URL(string: origin + "/w/\(id)") else { continue }
+                let date = (v["originallyPublishedAt"] as? String) ?? (v["publishedAt"] as? String)
+                let category = (v["category"] as? [String: Any])?["label"] as? String
+                videos.append(FoundVideo(title: name, url: watch,
+                                         poster: (v["previewPath"] as? String ?? v["thumbnailPath"] as? String).flatMap { URL(string: origin + $0) },
+                                         overview: (v["description"] as? String)?.nonEmpty,
+                                         year: date.flatMap { Int($0.prefix(4)) },
+                                         genres: category.map { [$0] } ?? [],
+                                         live: v["isLive"] as? Bool ?? false))
+            }
+            let total = page["total"] as? Int ?? 0
+            start += 100
+            if data.isEmpty || start >= total { break }
+        }
+        guard !videos.isEmpty else { throw AppError.message("Non ci sono video pubblici in questo canale o istanza PeerTube.") }
+        return WebSources.make(videos, library: library, seriesTitle: nil, lazy: lazyKind)
     }
 
     private static func list(_ endpoint: String, origin: String, library: Library, title: String, playlist: Bool) async throws -> [MediaItem] {

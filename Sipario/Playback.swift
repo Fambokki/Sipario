@@ -65,6 +65,17 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
         var ep = episode
         if item.kind == .series && ep == nil { ep = store.resumeEpisode(for: item) }
         guard let url = ep?.url ?? item.url else { return }
+        if ep == nil, let kind = item.lazyStream {
+            Task {
+                do {
+                    let stream = try await WebSources.resolveStream(kind, page: url)
+                    self.start(item: item, episode: nil, url: stream)
+                } catch {
+                    self.failure = Failure(url: url, title: item.displayTitle, message: error.localizedDescription)
+                }
+            }
+            return
+        }
         start(item: item, episode: ep, url: url)
     }
 

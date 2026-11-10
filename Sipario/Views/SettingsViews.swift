@@ -404,11 +404,14 @@ struct FormatsHelpView: View {
                 Text("Il link diretto a un file video (.mp4, .mov, .m4v…) o a un flusso HLS (.m3u8).")
             } header: { Text("Singolo video") }
             Section {
-                Text("Il link di un video, di una collezione o di una ricerca su archive.org (ad esempio archive.org/details/…): ogni titolo arriva con copertina, anno e trama. Ci sono migliaia di film di pubblico dominio.")
+                Text("Il link di un video, di una collezione o di una ricerca su archive.org (ad esempio archive.org/details/feature_films o archive.org/search?query=western): si importano fino a 1000 titoli con copertina, anno e trama, e il video si apre quando premi Play.")
             } header: { Text("Internet Archive") }
             Section {
-                Text("Il link di un video, di un canale (/c/…), di un account (/a/…) o di una playlist (/w/p/…) di un'istanza PeerTube. Le playlist con S01E02 nei titoli diventano serie.")
+                Text("Il link della home di un'istanza PeerTube (tutto il suo catalogo), di un canale (/c/…), di un account (/a/…), di una playlist (/w/p/…) o di un singolo video. Le playlist con S01E02 nei titoli diventano serie.")
             } header: { Text("PeerTube") }
+            Section {
+                Text("L'indirizzo del tuo server con una chiave API, ad esempio http://192.168.1.10:8096/?api_key=CHIAVE (la chiave si crea in Dashboard → Chiavi API). Sipario importa tutti i film e tutte le serie con stagioni, episodi, copertine e trame; i file MKV e AVI vengono convertiti dal server per il player di iOS. Aggiungi &user=Nome per scegliere un utente.")
+            } header: { Text("Jellyfin o Emby") }
             Section {
                 Text("Il link di una pagina che contiene un video in chiaro (MP4 o HLS). Sipario apre la pagina in un browser invisibile che blocca i circuiti pubblicitari, trova il flusso del video e importa solo quello, con titolo e copertina della pagina. Non funziona con i video protetti da DRM (RaiPlay, Netflix, Prime Video…) né con le pubblicità inserite dentro il flusso stesso.")
             } header: { Text("Pagina web") }
