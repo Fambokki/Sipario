@@ -199,7 +199,7 @@ struct LibraryEditorView: View {
                         ForEach(KindHint.allCases) { Text($0.label).tag($0) }
                     }
                 } footer: {
-                    Text("Incolla il link di una playlist M3U, di un catalogo JSON, di una cartella web con file video (ad esempio il tuo NAS) o di un singolo video.")
+                    Text("Incolla il link di una playlist M3U, di un catalogo JSON, di una cartella web con file video (ad esempio il tuo NAS), di una pagina web con un video, di Internet Archive o PeerTube, o di un singolo video.")
                 }
 
                 if isNew {
@@ -403,6 +403,15 @@ struct FormatsHelpView: View {
             Section {
                 Text("Il link diretto a un file video (.mp4, .mov, .m4v…) o a un flusso HLS (.m3u8).")
             } header: { Text("Singolo video") }
+            Section {
+                Text("Il link di un video, di una collezione o di una ricerca su archive.org (ad esempio archive.org/details/…): ogni titolo arriva con copertina, anno e trama. Ci sono migliaia di film di pubblico dominio.")
+            } header: { Text("Internet Archive") }
+            Section {
+                Text("Il link di un video, di un canale (/c/…), di un account (/a/…) o di una playlist (/w/p/…) di un'istanza PeerTube. Le playlist con S01E02 nei titoli diventano serie.")
+            } header: { Text("PeerTube") }
+            Section {
+                Text("Il link di una pagina che contiene un video in chiaro (MP4 o HLS). Sipario apre la pagina in un browser invisibile che blocca i circuiti pubblicitari, trova il flusso del video e importa solo quello, con titolo e copertina della pagina. Non funziona con i video protetti da DRM (RaiPlay, Netflix, Prime Video…) né con le pubblicità inserite dentro il flusso stesso.")
+            } header: { Text("Pagina web") }
 
             Section {
                 Text("Sipario non fornisce contenuti: usa solo librerie di video che possiedi o che hai il diritto di guardare.")

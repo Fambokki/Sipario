@@ -46,6 +46,8 @@ struct Episode: Codable, Hashable, Identifiable {
     var title: String?
     var url: URL
     var still: URL?
+    /// Pagina da cui proviene il flusso, inviata come Referer.
+    var referer: URL?
 
     var code: String { "S\(season) E\(number)" }
 }
@@ -67,6 +69,8 @@ struct MediaItem: Codable, Hashable, Identifiable {
     var meta: Meta?
     var matchTried: Bool = false
     var tmdbHint: Int?
+    /// Pagina da cui proviene il flusso, inviata come Referer.
+    var referer: URL?
 
     var displayTitle: String { meta?.title ?? title }
     var displayYear: Int? { year ?? meta?.year }

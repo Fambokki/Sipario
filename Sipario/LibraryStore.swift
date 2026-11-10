@@ -273,7 +273,15 @@ final class LibraryStore: ObservableObject {
             let entry = Importer.Entry(title: lib.name, url: url, guess: lib.hint == .live ? .live : .movie)
             return Importer.build([entry], library: lib)
         }
-        let (data, type) = try await Importer.download(url)
+        if let adapted = try await WebSources.adapterItems(for: lib, url: url) { return adapted }
+        let data: Data
+        let type: String?
+        do {
+            (data, type) = try await Importer.download(url)
+        } catch AppError.http(let code) where [403, 429, 503].contains(code) {
+            // Alcuni siti rifiutano le richieste semplici ma si aprono in un browser.
+            return try await WebSources.pageItems(for: lib, url: url, html: nil)
+        }
         return try await Importer.items(for: lib, data: data, contentType: type, base: url)
     }
 

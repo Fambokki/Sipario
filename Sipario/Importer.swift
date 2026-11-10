@@ -128,7 +128,12 @@ enum Importer {
         }
         if lowerHead.contains("<html") || lowerHead.contains("<a ") || lowerHead.contains("<!doctype") || (contentType ?? "").contains("html") {
             guard let base else { throw AppError.message("Le cartelle web vanno aggiunte con il loro link.") }
-            return try await crawl(root: base, firstPage: text, library: library)
+            do {
+                return try await crawl(root: base, firstPage: text, library: library)
+            } catch {
+                // Non è l'elenco di una cartella: si cerca il video dentro la pagina.
+                return try await WebSources.pageItems(for: library, url: base, html: text)
+            }
         }
         throw AppError.message("Formato non riconosciuto. Sono supportate playlist M3U, cataloghi JSON e cartelle web con file video.")
     }

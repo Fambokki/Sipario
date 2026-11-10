@@ -75,7 +75,16 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
         currentEpisode = episode
         currentURL = url
 
-        let playerItem = AVPlayerItem(url: url)
+        let playerItem: AVPlayerItem
+        if let referer = episode?.referer ?? item.referer {
+            // Alcuni siti consegnano il flusso solo se la richiesta arriva "dalla" loro pagina.
+            var headers = ["Referer": referer.absoluteString]
+            if let scheme = referer.scheme, let host = referer.host { headers["Origin"] = "\(scheme)://\(host)" }
+            let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+            playerItem = AVPlayerItem(asset: asset)
+        } else {
+            playerItem = AVPlayerItem(url: url)
+        }
         playerItem.externalMetadata = metadata(item: item, episode: episode)
         observe(playerItem, startAt: startAt)
 
