@@ -35,12 +35,24 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
 
     struct Failure: Identifiable {
         let id = UUID()
-        let url: URL
+        let url: URL?
         let title: String
         let message: String
     }
 
     @Published var failure: Failure?
+
+    /// Più fonti trovate dagli addon Stremio: l'utente sceglie quale aprire.
+    struct StreamChoice: Identifiable {
+        let id = UUID()
+        let item: MediaItem
+        let episode: Episode?
+        let options: [Stremio.StreamOption]
+    }
+
+    @Published var streamChoice: StreamChoice?
+    @Published var resolving = false
+    private var lastSource: String?
 
     private var player: AVPlayer?
     private var controller: SiparioPlayerController?
@@ -81,10 +93,49 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
             }
             return
         }
-        start(item: item, episode: ep, url: url)
+        begin(item: item, episode: ep, url: url)
     }
 
-    private func start(item: MediaItem, episode: Episode?, url: URL) {
+    // MARK: Addon Stremio
+
+    /// Se il titolo viene da un addon Stremio, prima si chiede il video agli addon; altrimenti si riproduce subito.
+    private func begin(item: MediaItem, episode: Episode?, url: URL, automatic: Bool = false) {
+        guard url.scheme == Stremio.scheme else {
+            start(item: item, episode: episode, url: url)
+            return
+        }
+        let sources = store.libraries.map(\.source).filter(Stremio.isManifest)
+        resolving = true
+        Task {
+            defer { self.resolving = false }
+            do {
+                let options = try await Stremio.streams(for: url, addonSources: sources)
+                if options.count == 1 || automatic {
+                    // Nell'episodio successivo si resta sulla stessa fonte, se c'è.
+                    let pick = options.first { $0.addon == self.lastSource && $0.url != nil } ?? options.first { $0.url != nil } ?? options[0]
+                    self.choose(pick, item: item, episode: episode)
+                } else {
+                    self.streamChoice = StreamChoice(item: item, episode: episode, options: options)
+                }
+            } catch {
+                if automatic { self.controller?.dismiss(animated: true); return }
+                self.failure = Failure(url: nil, title: episode.map { "\(item.displayTitle) · \($0.code)" } ?? item.displayTitle,
+                                       message: error.localizedDescription)
+            }
+        }
+    }
+
+    func choose(_ option: Stremio.StreamOption, item: MediaItem, episode: Episode?) {
+        streamChoice = nil
+        lastSource = option.addon
+        if let url = option.url {
+            start(item: item, episode: episode, url: url, headers: option.headers)
+        } else if let external = option.external {
+            UIApplication.shared.open(external)
+        }
+    }
+
+    private func start(item: MediaItem, episode: Episode?, url: URL, headers extra: [String: String] = [:]) {
         let pid = episode?.id ?? item.id
         let startAt = item.kind == .live ? 0 : store.resumePosition(pid)
         currentItem = item
@@ -92,10 +143,13 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
         currentURL = url
 
         let playerItem: AVPlayerItem
+        var headers = extra
         if let referer = episode?.referer ?? item.referer {
             // Alcuni siti consegnano il flusso solo se la richiesta arriva "dalla" loro pagina.
-            var headers = ["Referer": referer.absoluteString]
-            if let scheme = referer.scheme, let host = referer.host { headers["Origin"] = "\(scheme)://\(host)" }
+            headers["Referer"] = headers["Referer"] ?? referer.absoluteString
+            if let scheme = referer.scheme, let host = referer.host { headers["Origin"] = headers["Origin"] ?? "\(scheme)://\(host)" }
+        }
+        if !headers.isEmpty {
             let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
             playerItem = AVPlayerItem(asset: asset)
         } else {
@@ -176,7 +230,7 @@ final class Playback: NSObject, ObservableObject, AVPlayerViewControllerDelegate
         guard let item = currentItem, let next = nextEpisode else { return }
         saveProgress()
         if let ep = currentEpisode { store.setWatched(ep.id, seriesId: item.id, true) }
-        start(item: item, episode: next, url: next.url)
+        begin(item: item, episode: next, url: next.url, automatic: true)
     }
 
     private func didFinishItem() {

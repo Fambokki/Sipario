@@ -71,15 +71,39 @@ struct RootView: View {
             titleVisibility: .visible,
             presenting: playback.failure
         ) { f in
-            ForEach(ExternalPlayer.allCases) { p in
-                Button("Apri in \(p.name)") {
-                    if let u = p.link(for: f.url) { openURL(u) }
+            if let url = f.url {
+                ForEach(ExternalPlayer.allCases) { p in
+                    Button("Apri in \(p.name)") {
+                        if let u = p.link(for: url) { openURL(u) }
+                    }
                 }
+                Button("Copia il link") { UIPasteboard.general.url = url }
             }
-            Button("Copia il link") { UIPasteboard.general.url = f.url }
-            Button("Annulla", role: .cancel) {}
+            Button(f.url == nil ? "OK" : "Annulla", role: .cancel) {}
         } message: { f in
             Text(f.message)
+        }
+        .background(
+            Color.clear.confirmationDialog(
+                "Scegli la fonte",
+                isPresented: Binding(get: { playback.streamChoice != nil }, set: { if !$0 { playback.streamChoice = nil } }),
+                titleVisibility: .visible,
+                presenting: playback.streamChoice
+            ) { c in
+                ForEach(c.options.prefix(20)) { o in
+                    Button(o.label) { playback.choose(o, item: c.item, episode: c.episode) }
+                }
+                Button("Annulla", role: .cancel) {}
+            } message: { c in
+                Text(c.episode.map { "\(c.item.displayTitle) · \($0.code)" } ?? c.item.displayTitle)
+            }
+        )
+        .overlay {
+            if playback.resolving {
+                ProgressView("Cerco il video…")
+                    .padding(20)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            }
         }
     }
 }

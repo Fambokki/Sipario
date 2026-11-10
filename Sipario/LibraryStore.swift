@@ -198,7 +198,8 @@ final class LibraryStore: ObservableObject {
         if let fileData { try fileData.write(to: Self.sourceFile(lib.id)) }
         do {
             let new = try await load(lib)
-            guard new.contains(where: { $0.kind != .series || !$0.episodes.isEmpty }) else {
+            // Un addon Stremio che fornisce solo i video (senza cataloghi) è una libreria valida anche se vuota.
+            guard new.contains(where: { $0.kind != .series || !$0.episodes.isEmpty }) || Stremio.isManifest(source) else {
                 throw AppError.message("Non ho trovato film, serie o canali in questa libreria.")
             }
             lib.lastUpdated = Date()
@@ -266,7 +267,7 @@ final class LibraryStore: ObservableObject {
             }
             return try await Importer.items(for: lib, data: data, contentType: nil, base: nil)
         }
-        guard let url = URL(string: lib.source.trimmed), url.scheme?.hasPrefix("http") == true else {
+        guard let url = URL(string: Stremio.normalize(lib.source)), url.scheme?.hasPrefix("http") == true else {
             throw AppError.message("Il link non è valido: deve iniziare con http:// o https://")
         }
         if Importer.isDirectVideo(url) {

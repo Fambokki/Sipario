@@ -23,6 +23,9 @@ enum WebSources {
 
     /// Titoli da un sito con un adattatore dedicato, oppure nil se l'indirizzo non è di uno di questi siti.
     static func adapterItems(for library: Library, url: URL) async throws -> [MediaItem]? {
+        if Stremio.isManifest(url.absoluteString) {
+            return try await Stremio.items(for: library, url: url)
+        }
         if StreamingServices.handles(url) {
             return try await StreamingServices.items(for: library, url: url)
         }

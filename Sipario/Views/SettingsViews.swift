@@ -416,6 +416,9 @@ struct FormatsHelpView: View {
                 Text("Il link di un servizio come raiplay.it, netflix.com, primevideo.com, disneyplus.com, it.chili.com, mediasetinfinity.it, nowtv.it o timvision.it. Sipario importa da TMDB i film e le serie più popolari disponibili su quel servizio in Italia, con locandine e trame; \"Guarda su…\" apre il titolo nell'app o sul sito del servizio. Serve la chiave TMDB.")
             } header: { Text("Servizi di streaming") }
             Section {
+                Text("Il link del manifest di un addon Stremio (https://…/manifest.json o stremio://…). Gli addon con cataloghi riempiono la Home con film, serie ed episodi; quando premi Play, Sipario chiede il video a tutti gli addon installati che forniscono flussi e, se ce ne sono più di uno, ti fa scegliere la fonte. Per esempio Cinemeta (https://v3-cinemeta.strem.io/manifest.json) aggiunge il catalogo dei film e delle serie più popolari. Sono supportati i flussi con un link web (MP4, HLS) e i link a YouTube; i torrent no. Usa solo addon di contenuti che hai il diritto di guardare.")
+            } header: { Text("Addon Stremio") }
+            Section {
                 Text("Il link di una pagina che contiene un video in chiaro (MP4 o HLS). Sipario apre la pagina in un browser invisibile che blocca i circuiti pubblicitari, trova il flusso del video e importa solo quello, con titolo e copertina della pagina. Non funziona con i video protetti da DRM (RaiPlay, Netflix, Prime Video…) né con le pubblicità inserite dentro il flusso stesso.")
             } header: { Text("Pagina web") }
 
